@@ -26,9 +26,9 @@ UserStartAddress
     TRAP    #15
     
     CLR.L   D2                  * D2 to store hexadecimal address
-    CLR.B   D6                  * Use D6 as flag for error in input (out of range OR non-Hex char): 1 == error, 0 == okay
+    CLR.B   D6                  * Use D6 as flag for error in input
     
-    JSR     LOWER_CASE_CHECK   * branch to check input
+    JSR     LOWER_CASE_CHECK    * branch to check input
 
     CMP.B   #1, D6              * check if D6 is set, if yes return to start input
     BEQ     UserStartAddress
@@ -71,7 +71,33 @@ UserEndAddress
 
     MOVEA.L #$00000000, A1      * Clear A1 
     MOVE.L  D2, A6              * Load accepted Ending address into A6
-   
+ 
+ReadMemory    
+    
+    
+    CMPA.L  A5, A6              * check if reach the end
+    BEQ     END
+    
+    MOVE.L  A5, D2              * move address to D2  to display
+    MOVE.W (A5)+, D3            * store data to D3 for further use
+    MOVE.B  #4, $400            * use ($400) to store roatate count
+    JSR Display_Address         
+    MOVE.W  D3,D2               * move data to D2 to display
+    MOVE.B  #4, $400            * reset ($400)
+    
+    LEA     space, A1      * space between address and data
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR Display_Address         * display data
+    
+    LEA     nl, A1      * new line
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JMP ReadMemory      * loop
+    
+  
 * -----------------------------------
 * Check if the address store in D2 is in range 1000 - FFFFFF
 RANGE_CHECK
@@ -132,9 +158,9 @@ LOWER_CASE_CHECK
 
     JSR     ADDRESS_CONFIGURE   * Jump to subroutine for properly configure the address
 
-    SUB.B   #1, D1          * Use D1 as a counter to check next char in user input
+    SUB.B   #1, D1          * minus 1 , if D1 = 0, end converting char to number
     ADDQ.L  #1, A1          * Increment address pointer
-    CMP.B   #0, D1          * Check if all chars were checked, if not continue to check
+    CMP.B   #0, D1          * Check if D1 == 0, if not continue read char.
     BGT     LOWER_CASE_CHECK
     RTS
     
@@ -147,11 +173,11 @@ UPPER_CASE_CHECK
     BLT     NUMBER_CHECK
     SUB.B   #55, (A1)      * Subtract 55 to convert upper case char to hex number
 
-    JSR     ADDRESS_CONFIGURE   * Jump to subroutine for properly configure the address
+    JSR     ADDRESS_CONFIGURE   
 
-    SUB.B   #1, D1          * Similar to 1st input check
-    ADDQ.L  #1, A1
-    CMP.B   #0, D1
+    SUB.B   #1, D1          * minus 1
+    ADDQ.L  #1, A1          * Increment address pointer
+    CMP.B   #0, D1          * Check if D1 == 0
     BGT     LOWER_CASE_CHECK
     RTS
 
@@ -187,14 +213,45 @@ INPUT_ERROR
     TRAP    #15
     MOVE.B  #1, D6      * use D2 as a flag to check input
     RTS
+    
+* --------------------------------------------------
+* Display address. Address must be stored in D2 and memory $400
+Display_Address
+    ROL.W   #4,D2       * Rotate the first hex number to the back so we can read    
+    MOVE.B  D2, D1      * D1 to store the byte data
+    ANDI.B  #$0F,D1     * AND the byte data so we can only see the first one    
+    CMPI.B  #$A,D1      * check if it is greater than A
+    JSR     DisplayChar * If yes jmp to display (A - F)
+    CMPI.B  #$A,D1      * check if it is less than A
+    BLT     DisplayNum  * If yes jmp to display (0 - 9)
+    MOVE.B  #6,D0       * TRAP 6 display character
+    TRAP    #15         
+    SUB.B   #1,($400)
+    CMPI.B   #0, $400   *check if roatation done
+    BNE Display_Address
+  
 
- 
+DisplayChar
+    CMPI    #$A, D1
+    BLT     DisplayNum
+    ADD.B   #55,D1
+    RTS
+    
+    
+DisplayNum
+    ADD.B   #48,D1
+    RTS
+END
+    
 * -----------------------------------------------------------------------------------------------------------
 * Variables and constants 
 * -----------------------------------------------------------------------------------------------------------
 CR              EQU     $0D     * CR
 LF              EQU     $0A     * LF
-startInput      DC.B    'Welcome to 68k disassembler!', CR, LF 
+NL              DC.B    CR,LF,0
+space           DC.B    ' ',0
+zero            DC.B    '0000', 0
+startInput      DC.B    'Welcome to 68k disassembler! Christopher, Martin, Patric', CR, LF 
                 DC.B    'Please enter starting address in Hex($1000 to $FFFFFF): ', 0
 endInput        DC.B    'Please enter ending address in Hex(must greater than start address): ', 0
 typeInputError  DC.B    'ERROR: Your entered address is not a hex!', CR, LF, 0
@@ -203,6 +260,8 @@ DifferentError   DC.B    'ERROR: Ending address must be greater than Starting ad
 OddError         DC.B    'ERROR: Address must be even ', CR, LF, 0
 
     END    START        ; last line of source
+
+
 
 
 
