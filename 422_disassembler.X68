@@ -20,7 +20,8 @@
 *       Update: - 05/14/2018  Martin Huang
 *                   + Decode: NEG
 *                   + Size handle: size must be stored in D6 for further use    
-*                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (memory shift one bit)           
+*                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (memory shift one bit) 
+*                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (register shift)          
 *-----------------------------------------------------------
     ORG    $1000
 START:                  ; first instruction of program
@@ -30,6 +31,8 @@ START:                  ; first instruction of program
     LSL     -(A4)
     ROR     (A5)
     ASL     $00020000
+    ASL.B   #$4,D5
+    LSR.L   D5, D5
     CLR.L   D0
 * Put program code here
 * TEST CODE 
@@ -109,6 +112,7 @@ ReadMemory
     MOVE.W (A5)+, D3            * store data to D3 for further use
     MOVE.B  #8, $400            * use ($400) to store roatate count
     JSR Display_Address_L
+    
     CLR.L   D2         
     MOVE.W  D3,D2               * move data to D2 to display
     MOVE.B  #4, $400            * reset ($400)
@@ -338,6 +342,11 @@ DECODE
     ANDI.W  #$F0C0, D4
     CMPI.W  #$E0C0, D4
     BEQ     DISPLAY_ROTATION_M    * decode ASL, ASR, LSL, LSR, ROL, ROR memory shift one bit, use D6 to store rotation type
+    
+    MOVE.W  D3, D4
+    ANDI.W  #$F000, D4
+    CMPI.W  #$E000, D4
+    BEQ     DISPLAY_ROTATION_R    * decode ASL, ASR, LSL, LSR, ROL, ROR register shift, use D6 to store size type, D7 to store rotation type
    
     JSR Display_Address         * display data
     RTS
@@ -413,8 +422,9 @@ DISPLAY_NEG
     
     JSR     EA_HANDLE
     RTS
+    
 * ---------------------------------------
-* Display rotation and the memory mode base on its condition
+* Display rotation  (memory shift) mode base on its condition
 DISPLAY_ROTATION_M
 
     CLR.L   D6              * rotation check
@@ -439,7 +449,42 @@ DISPLAY_ROTATION_M
     
     JSR     EA_HANDLE
     RTS
+    
+* ---------------------------------------
+* Display rotation  (register shift) mode base on its condition
+DISPLAY_ROTATION_R
+    CLR.L   D6              * rotation check
+    MOVE.W  D3, D6
+    MOVE.W  D6, D7
+    ROR.W   #8, D7
+    ANDI.W  #$0001, D7
 
+    ROR.W   #2, D6
+    ANDI.W  #$0006, D6
+    ADD.B   D7, D6
+    JSR     ROTATION_CHECK
+    
+    CLR.L   D6
+    MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+    LSR.W   #6, D6              * no need to mask it is already a size
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     IORR
+    
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4                  * mode set to 000, register shift only works for register
+
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    
+    JSR     EA_HANDLE
+    RTS
 * -------------------------------------
 * Display CLR and its size and its EA mode 1) Dn 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L   
 DISPLAY_CLR
@@ -636,6 +681,52 @@ ROTATION_CHECK
     BEQ     Display_ROL
     RTS
     
+IORR
+    MOVE.W  D3, D5
+    ANDI.W  #$0020, D5
+    CMPI.W  #$0020, D5
+    BEQ     REGISTER_SHIFT
+    
+    LEA     DIM, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.W  D3, D5
+    ROL.W   #7, D5
+    ANDI    #$0007, D5
+    
+    CLR.L   D1
+    MOVE.B  D5, D1
+    JSR     DisplayNum
+    MOVE.B  #6, D0
+    TRAP    #15
+    
+    LEA     DComma, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS
+    
+REGISTER_SHIFT
+    LEA     DDn, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.W  D3, D5
+    ROL.W   #7, D5
+    ANDI    #$0007, D5
+    
+    CLR.L   D1
+    MOVE.B  D5, D1
+    JSR     DisplayNum
+    MOVE.B  #6, D0
+    TRAP    #15
+    
+    LEA     DComma, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    RTS
+    
 Display_ASR  
     LEA     DASR, A1
     MOVE.B  #14, D0
@@ -734,10 +825,11 @@ DAn             DC.B    'A',0
 DAnplus         DC.B    '(A',0
 DAnplusN        DC.B    ')',0
 DAnplusP        DC.B    ')+',0
-DminusAn        DC.B    '-(',0
+DminusAn        DC.B    '-(A',0
 DFFFF           DC.B    'FFFF',0
 DAddress        DC.B    '$',0
 DIM             DC.B    '#$',0
+DComma          DC.B    ',',0
 
 * Display size
 DByte           DC.B    '.B', 0
@@ -752,6 +844,7 @@ DLSL            DC.B    'LSL', 0
 DROR            DC.B    'ROR', 0
 DROL            DC.B    'ROL', 0
     END    START        ; last line of source
+
 
 
 
