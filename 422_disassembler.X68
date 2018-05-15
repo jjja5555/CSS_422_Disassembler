@@ -21,22 +21,60 @@
 *                   + Decode: NEG
 *                   + Size handle: size must be stored in D6 for further use    
 *                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (memory shift one bit) 
-*                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (register shift)          
+*                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (register shift)
+*                   + Decode: LEA
+*                   + Decode: CMP
+*                   + Decode: MOVEQ, ADDQ, ADDI
+*                   + Decode: ADDA
+*                   + added: address control, word size (0 - 7fff) (ffff8000 - ffffffff)
+*                   + Decode: MOVEA, MULS, MULU, DIVU
+*                   + Decode: BCC, BGT, BLE
+*                   + Decode: MOVE
+*                   + Decode: MOVEM         4880 MASK FB80
+*                   + Decode: AND
+*                   + Decode: OR
+*                   + Decode: ADD
+*                   + Decode: SUB
 *-----------------------------------------------------------
     ORG    $1000
 START:                  ; first instruction of program
-    NEG.l   D1
-    LSL     $400
-    LSL     (A4)+
-    LSL     -(A4)
-    ROR     (A5)
-    ASL     $00020000
-    ASL.B   #$4,D5
-    LSR.L   D5, D5
-    CLR.L   D0
+
+
 * Put program code here
 * TEST CODE 
-
+    MOVE.B      D2, D2
+    AND.B       D2, D3
+    AND.L       #$4EBF, D3
+    ADD.L       $400, D3
+    ADD.W       (A3)+, D5
+    SUB.W       D3, D6
+    OR.W        $4000, D3
+    OR.L        D3, (A3)
+    MOVE.L      $400, D7
+    MOVE.L      (A1)+, D7
+    MOVE.L      #$1000, D1
+    MULS        #$10, D1
+    DIVU        (A1)+, D1
+    MOVE.W      #$6, D0
+    MOVE.W      #$1, D1
+    MOVE.W      #$5, D2
+    MOVEM.W     D0-D2, $400
+    MOVEM.W     $400, D4-D6
+    MOVEM.W     D0/D1/D2/D3/D4/D5/D6/D7/A1, -(SP)
+    MOVEM.W     D0/D1/D2/D3/D4/D5/D6/D7/A1, (SP)
+    MOVEM.W     D0-D7/A1, -(A7)
+    MOVEM.W     D0-D2/D2-D4/D4-D6/A1, -(SP)
+    MOVEA.W     $00008000, A1
+    MOVEA.W     $FFFF8000, A6
+    SUBI.L      #$10, D7
+    ADDI.L      #$10, D7
+    ADDQ.L      #$8, D7
+    ADDI.L      #$8, D7
+    
+    ADDI.W      #$8, D7
+    ADDI.B      #$8, D7
+    ADDQ.B      #8, D7
+    
 * -------------------------------------
 * Display welcome message and check the first input address
 UserStartAddress
@@ -256,6 +294,7 @@ EA_AB_WORD
     CLR.L   D2
     MOVE.W  (A5)+,D2
     JSR     Display_FFFF
+    
     MOVE.B  #4, $400
     JSR Display_Address
     RTS
@@ -277,8 +316,29 @@ EA_AB_LONG
 * ---------------------------------------
 * EA Absolute addressing WORD, D5 stores register number     
 EA_IM
+    LEA     DIM, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     IM_SIZE
     RTS
    
+IM_SIZE
+    CMPI.B  #2, D6
+    BEQ     IM_LONG
+    
+    CLR.L   D2
+    MOVE.W  (A5)+,D2
+    MOVE.B  #4, $400
+    JSR Display_Address
+    
+    RTS
+IM_LONG
+    CLR.L   D2
+    MOVE.L  (A5)+,D2
+    MOVE.B  #8, $400
+    JSR Display_Address_L
+    RTS    
 * ---------------------------------------
 * handle size, size must be stored in D6
 SIZE_HANDLE
@@ -347,6 +407,98 @@ DECODE
     ANDI.W  #$F000, D4
     CMPI.W  #$E000, D4
     BEQ     DISPLAY_ROTATION_R    * decode ASL, ASR, LSL, LSR, ROL, ROR register shift, use D6 to store size type, D7 to store rotation type
+    
+    MOVE.W  D3, D4
+    ANDI.W  #$F1C0, D4          * decode LEA
+    CMPI.W  #$41C0, D4
+    BEQ     DISPLAY_LEA         
+    
+    MOVE.W  D3, D4              * decode CMP
+    ANDI.W  #$F000, D4
+    CMPI.W  #$B000, D4
+    BEQ     DISPLAY_CMP
+    
+    MOVE.W  D3, D4              * decode MOVEQ
+    ANDI.W  #$F000, D4
+    CMPI.W  #$7000, D4
+    BEQ     DISPLAY_MOVEQ
+    
+    MOVE.W  D3, D4              * decode ADDQ
+    ANDI.W  #$F000, D4
+    CMPI.W  #$5000, D4
+    BEQ     DISPLAY_ADDQ
+    
+    MOVE.W  D3, D4              * decode ADDI
+    ANDI.W  #$FF00, D4
+    CMPI.W  #$0600, D4
+    BEQ     DISPLAY_ADDI
+    
+    MOVE.W  D3, D4              * decode SUBI
+    ANDI.W  #$FF00, D4
+    CMPI.W  #$0400, D4
+    BEQ     DISPLAY_SUBI
+    
+    MOVE.W  D3, D4              * decode ADDA
+    ANDI.W  #$F0C0, D4
+    CMPI.W  #$D0C0, D4
+    BEQ     DISPLAY_ADDA     
+
+    MOVE.W  D3, D4              * decode ADDA
+    ANDI.W  #$C040, D4
+    CMPI.W  #$0040, D4
+    BEQ     DISPLAY_MOVEA    
+    
+    MOVE.W  D3, D4              * decode MULS/ MULU
+    ANDI.W  #$F0C0, D4
+    CMPI.W  #$C0C0, D4
+    BEQ     DISPLAY_MUL
+    
+    MOVE.W  D3, D4              * decode DIVU
+    ANDI.W  #$F0C0, D4
+    CMPI.W  #$80C0, D4
+    BEQ     DISPLAY_DIVU        
+    
+    MOVE.W  D3, D4              * decode BXX
+    ANDI.W  #$F000, D4
+    CMPI.W  #$6000, D4
+    BEQ     DISPLAY_BXX  
+    
+    MOVE.W  D3, D4              * decode MOVE
+    ANDI.W  #$F000, D4
+    CMPI.W  #$1000, D4
+    BEQ     DISPLAY_MOVE  
+    CMPI.W  #$3000, D4
+    BEQ     DISPLAY_MOVE 
+    CMPI.W  #$2000, D4
+    BEQ     DISPLAY_MOVE
+    
+    MOVE.W  D3, D4              * decode AND
+    ANDI.W  #$F000, D4
+    CMPI.W  #$C000, D4
+    BEQ     DISPLAY_AND  
+    
+    MOVE.W  D3, D4              * decode OR
+    ANDI.W  #$F000, D4
+    CMPI.W  #$8000, D4
+    BEQ     DISPLAY_OR
+
+    MOVE.W  D3, D4              * decode ADD
+    ANDI.W  #$F000, D4
+    CMPI.W  #$D000, D4
+    BEQ     DISPLAY_ADD
+    
+    MOVE.W  D3, D4              * decode SUB
+    ANDI.W  #$F000, D4
+    CMPI.W  #$9000, D4
+    BEQ     DISPLAY_SUB
+    
+    
+    MOVE.W  D3, D4              * decode MOVEM
+    ANDI.W  #$FB80, D4
+    CMPI.W  #$4880, D4
+    BEQ     DISPLAY_MOVEM
+          
+    
    
     JSR Display_Address         * display data
     RTS
@@ -514,9 +666,739 @@ DISPLAY_CLR
     
     JSR     EA_HANDLE
     RTS
+* ---------------------------------------
+* Display LEA and its EA mode   2) (An) 7) .W .L
+DISPLAY_LEA
+    LEA     DLEA, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.W  #1, D4
+    MOVE.W  D3, D5              * D5 to store EA register
+    ROL.W   #7, D5
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    RTS
 
 * -----------------------------------
-* Check if the address store in D2 is in range 1000 - FFFFFF
+* Display CMP and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L 7) immediate 
+DISPLAY_CMP   
+    LEA     DCMP, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+    LSR.W   #6, D6              * no need to mask it is already a size
+    
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.W  #0, D4
+    MOVE.W  D3, D5              * D5 to store EA register
+    ROL.W   #7, D5
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE   
+    RTS
+    
+* -----------------------------------
+* Display MOVEQ    
+DISPLAY_MOVEQ
+    LEA     DMOVEQ, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     DIM, A1        
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D2              * 8 bit number
+    MOVE.B  D3, D2
+    MOVE.B  #4, $400
+    JSR Display_Address
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.W  #0, D4
+    MOVE.W  D3, D5              * D5 to store EA register
+    ROL.W   #7, D5
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE   
+    
+    RTS   
+    
+* -----------------------------------
+* Display ADDQ and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .L 7) .W
+DISPLAY_ADDQ
+    LEA     DADDQ, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     DIM, A1        
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D2              * 8 bit number
+    ROL.W   #7, D2
+    ANDI.W  #$0007, D2          * mask last 3 bits
+    CMPI.B  #0, D2
+    JSR     ZERO2EIGHT
+    MOVE.B  #4, $400
+    JSR Display_Address
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    RTS   
+    
+* -----------------------------------
+* Display ADDI and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L      7) IMMEDIATE
+DISPLAY_ADDI
+    LEA     DADDI, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+    LSR.W   #6, D6              * no need to mask it is already a size
+    
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     DIM, A1        
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     LONG_CHECK
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    RTS   
+
+* -----------------------------------
+* Display SUBI and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L      7) IMMEDIATE
+DISPLAY_SUBI
+    LEA     DSUBI, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+    LSR.W   #6, D6              * no need to mask it is already a size
+    
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     DIM, A1        
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     LONG_CHECK
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    RTS   
+
+* -----------------------------------
+* Display ADDA and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate  
+DISPLAY_ADDA
+    LEA     DADDA, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L
+    LSR.W   #8, D6              * no need to mask it is already a size
+    ANDI.W  #1, D6
+    ADDQ.B  #1, D6
+    
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  #1, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register    
+    ROL.W   #7, D5              * rotate for EA mode
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    RTS   
+
+* -----------------------------------
+* Display MOVEA and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate  
+DISPLAY_MOVEA
+    LEA     DMOVEA, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L
+    ROL.W   #4, D6              * no need to mask it is already a size
+    ANDI.W  #3, D6   
+    JSR     MOVE_SIZE
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  #1, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register    
+    ROL.W   #7, D5              * rotate for EA mode
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    RTS  
+
+* -----------------------------------
+* Display MUL and modes (MULS OR MULU) and its EA mode 1) Dn  3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate 
+DISPLAY_MUL
+    LEA     DMUL, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store MODE   MULS = 7 MULU = 3
+    LSR.W   #6, D6              
+    ANDI.W  #7, D6
+    
+    JSR     S_U_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.W  #0, D4
+    MOVE.W  D3, D5              * D5 to store EA register
+    ROL.W   #7, D5
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE   
+    RTS
+    
+* -----------------------------------
+* Display DIVU and its EA mode 1) Dn  3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate 
+DISPLAY_DIVU
+    LEA     DDIVU, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.W  #0, D4
+    MOVE.W  D3, D5              * D5 to store EA register
+    ROL.W   #7, D5
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE   
+    RTS
+* -----------------------------------------
+* Display branch condition and the displacement
+DISPLAY_BXX
+    MOVE.W  D3, D4
+    ANDI.W  #$0F00, D4
+    JSR     BXX_CONDITION
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     DISPLACEMENT_HANDLE
+    
+    RTS
+* -------------------------------------------
+* Display MOVE instruction and source and destination EA mode
+DISPLAY_MOVE
+    LEA     DMOVE, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L       01 11 10
+    LSR.W   #8, D6              * shift size right
+    LSR.W   #4, D6              * shift again
+    JSR     MOVE_SIZEE
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register    
+    ROR.W   #6, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    
+    ROL.W   #7, D5
+    ANDI.   #$0007, D5
+    JSR     EA_HANDLE
+    
+    RTS
+
+MOVE_SIZEE
+    CMPI.B  #1, D6
+    BEQ     CBYTE
+    CMPI.B  #3, D6
+    BEQ     CWORD
+    RTS
+    
+CBYTE   
+    MOVE.B  #0, D6
+    RTS
+CWORD
+    MOVE.B  #1, D6
+    RTS
+    
+* -------------------------------------------
+* Display MOVEM PUSH AND POP, WORKING EA MODE 2) (An) 3) (An)+ 4) -(An) 7) .W 7) .W
+* REGISTER LOCATIONS are stored in D7
+DISPLAY_MOVEM 
+    MOVE.W  (A5)+, D7   
+    LEA     DMOVEM, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     MOVEM_DIR
+    RTS
+
+
+MOVEM_DIR
+    MOVE.W  D3, D6
+    ANDI.W  #$0400, D6
+    CMPI.W  #$0400, D6
+    BEQ     MEM2REG
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    RTS
+
+MEM2REG
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS
+
+* -------------------------------------------
+* Display AND instruction and source and destination EA mode
+DISPLAY_AND   
+    LEA     DAND, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+    LSR.W   #6, D6              * shift size right
+    ANDI.W  #3, D6
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR     D7
+    MOVE.W  D3, D7
+    LSR.W   #8, D7
+    ANDI.W  #1, D7
+    JSR     MODE_CHECK
+    
+    RTS
+
+* -------------------------------------------
+* Display OR instruction and source and destination EA mode
+DISPLAY_OR   
+    LEA     DOR, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+    LSR.W   #6, D6              * shift size right
+    ANDI.W  #3, D6
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR     D7
+    MOVE.W  D3, D7
+    LSR.W   #8, D7
+    ANDI.W  #1, D7
+    JSR     MODE_CHECK
+    
+    RTS
+    
+* -------------------------------------------
+* Display ADD instruction and source and destination EA mode
+DISPLAY_ADD   
+    LEA     DADD, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+    LSR.W   #6, D6              * shift size right
+    ANDI.W  #3, D6
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR     D7
+    MOVE.W  D3, D7
+    LSR.W   #8, D7
+    ANDI.W  #1, D7
+    JSR     MODE_CHECK
+    
+    RTS
+    
+* -------------------------------------------
+* Display SUB instruction and source and destination EA mode
+DISPLAY_SUB   
+    LEA     DSUB, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+    LSR.W   #6, D6              * shift size right
+    ANDI.W  #3, D6
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR     D7
+    MOVE.W  D3, D7
+    LSR.W   #8, D7
+    ANDI.W  #1, D7
+    JSR     MODE_CHECK
+    
+    RTS
+
+
+MODE_CHECK
+    CMPI.B  #1, D7
+    BEQ     Dn_EA
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  #0, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register    
+    ROL.W   #7, D5
+    ANDI.   #$0007, D5
+    JSR     EA_HANDLE
+    RTS
+
+Dn_EA   
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  #0, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register    
+    ROL.W   #7, D5
+    ANDI.   #$0007, D5
+    JSR     EA_HANDLE
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    RTS
+        
+BXX_CONDITION
+    CMPI.W  #$0400, D4
+    BEQ     Display_BCC
+    CMPI.W  #$0E00, D4
+    BEQ     Display_BGT
+    CMPI.W  #$0F00, D4
+    BEQ     Display_BLE
+    LEA     DBXX, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS
+Display_BCC
+    LEA     DBCC, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS
+Display_BGT
+    LEA     DBGT, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS
+Display_BLE   
+    LEA     DBLE, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS
+
+DISPLACEMENT_HANDLE
+    CMPI.B  #$00, D3
+    BEQ     WORD_D
+    CMPI.B  #$FF, D3
+    BEQ     LONG_D
+    
+    MOVE.B  D3, D2
+    MOVE.B  #$4, $400
+    JSR Display_Address
+    RTS   
+    
+WORD_D
+    MOVE.W  #7, D4
+    MOVE.W  #0, D5              * D5 to store EA register
+    JSR     EA_HANDLE  
+    RTS   
+    
+LONG_D
+    MOVE.W  #7, D4
+    MOVE.W  #1, D5              * D5 to store EA register
+    JSR     EA_HANDLE  
+    RTS   
+ZERO2EIGHT
+    CMPI.B  #0, D2
+    BEQ     Z2E
+    RTS  
+    
+Z2E
+    MOVEQ   #8, D2
+    RTS
 RANGE_CHECK
     CMP.L   #$FFFFFF, D2        * check upper bound
     BGT     RANGE_ERROR
@@ -776,7 +1658,7 @@ DisplayNum
     
 Display_FFFF
     CMPI.W  #$8000, D2
-    BLT     FFFF
+    BLE     FFFF
     
     RTS
     
@@ -785,9 +1667,45 @@ FFFF
     MOVE.B  #14, D0
     TRAP    #15
     RTS
- 
 
-       
+MOVE_SIZE
+    CMPI.B  #$3, D6
+    BEQ     MOVE_WORD
+    RTS
+ 
+MOVE_WORD
+    SUBI.B  #2, D6
+    RTS      
+    
+LONG_CHECK
+    CMPI.B  #2, D6
+    BEQ     D_LONG
+    CLR.L   D2              * 8 bit number
+    MOVE.W  (A5)+, D2
+    MOVE.B  #4, $400
+    JSR Display_Address
+    RTS
+    
+D_LONG
+    CLR.L   D2              * 8 bit number
+    MOVE.L  (A5)+, D2
+    MOVE.B  #8, $400
+    JSR Display_Address_L
+    RTS
+    
+S_U_HANDLE
+    CMPI.B  #7, D6
+    BEQ     D_S_HANDLE
+    LEA     Dunsigned, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS
+
+D_S_HANDLE
+    LEA     Dsigned, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    RTS    
 END
     LEA     endDisplay, A1
     MOVE.B  #14, D0
@@ -843,7 +1761,34 @@ DLSR            DC.B    'LSR', 0
 DLSL            DC.B    'LSL', 0
 DROR            DC.B    'ROR', 0
 DROL            DC.B    'ROL', 0
+
+* instruction
+DLEA            DC.B    'LEA', 0
+DCMP            DC.B    'CMP', 0
+DMOVEQ          DC.B    'MOVEQ', 0
+DADDQ           DC.B    'ADDQ', 0
+DADDI           DC.B    'ADDI', 0
+DSUBI           DC.B    'SUBI', 0
+DADDA           DC.B    'ADDA', 0
+DMOVEA          DC.B    'MOVEA', 0
+DDIVU           DC.B    'DIVU',0
+DBCC            DC.B    'BCC',0
+DBGT            DC.B    'BGT',0
+DBLE            DC.B    'BLE',0
+DBXX            DC.B    'BXX',0
+DMOVE           DC.B    'MOVE',0
+DMOVEM          DC.B    'MOVEM',0
+DAND            DC.B    'AND',0
+DOR             DC.B    'OR',0
+DADD            DC.B    'ADD',0
+DSUB            DC.B    'SUB',0
+* SIGN OR UNSIGN
+DMUL            DC.B    'MUL',0
+Dunsigned       DC.B    'U',0
+Dsigned         DC.B    'S',0
+
     END    START        ; last line of source
+
 
 
 
