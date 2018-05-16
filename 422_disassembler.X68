@@ -1169,7 +1169,7 @@ MOVEM_DIR
     BEQ     MEM2REG
     
     CLR.L   D1
-    JSR     Display_register2
+    JSR     Display_register_BCS
     LEA     DComma, A1      * comma
     MOVE.B  #14, D0
     TRAP    #15
@@ -1203,35 +1203,27 @@ MEM2REG
     TRAP    #15
     
     CLR.L   D1
-    JSR     Display_register2  
+    JSR     Display_register_BCS  
     RTS
  
-
-* ---------------------------------------------
-* Display the register list from D7     Use D5 to mask   Use D1 to store Register number flag
-Display_register2  
+Display_register_BCS
     CMPI.B  #4, D4
     BEQ     Display_register_D
-    CMPI.B  #16, D1
-    BGE     END_D
+    
+    CMPI.B  #0, D7
+    BEQ     END_D
     CLR.L   D5
-    MOVE.W  D7, D5
-    ANDI.W  #1, D5
-    CMPI.B  #1, D5
-    BEQ     PRINT_REGISTER
+    LSR.W   #1, D7
+    BCS     PRINT_REGISTER
     ADDI.B   #1, D1
-    ROR.W   #1, D7
-    JMP     Display_register2
+    JMP     Display_register_BCS
 
 Display_register_D  
-    CMPI.B  #16, D1
-    BGE     END_D
+    CMPI.W  #0, D7
+    BEQ     END_D
     CLR.L   D5
-    ROL.W   #1, D7
-    MOVE.W  D7, D5
-    ANDI.W  #1, D5
-    CMPI.B  #1, D5
-    BEQ     PRINT_REGISTER
+    LSL.W   #1, D7
+    BCS     PRINT_REGISTER
     ADDI.B   #1, D1
     JMP     Display_register_D
     
@@ -1250,7 +1242,7 @@ PRINT_REGISTER
     
     ADDI.B   #1, D1
     
-    CMPI.B  #15, D1
+    CMPI.W  #0, D7
     BEQ     END_D
     
     LEA     DSLASH, A1     
@@ -1259,10 +1251,9 @@ PRINT_REGISTER
     
     CMPI.B  #4, D4
     BEQ     ROL_W
-    ROR.W   #1, D7
     
     
-    JMP     Display_register2
+    JMP     Display_register_BCS
 
 
 PRINT_A
@@ -1277,7 +1268,7 @@ PRINT_A
     
     ADDI.B   #1, D1
     
-    CMPI.B  #15, D1
+    CMPI.W  #0, D7
     BEQ     END_D
     
     LEA     DSLASH, A1     
@@ -1287,10 +1278,9 @@ PRINT_A
     
     CMPI.B  #4, D4
     BEQ     ROL_W
-    ROR.W   #1, D7
     
     
-    JMP     Display_register2
+    JMP     Display_register_BCS
 
 ROL_W
     JMP     Display_register_D
@@ -1902,6 +1892,7 @@ Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
     END    START        ; last line of source
+
 
 
 

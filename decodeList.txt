@@ -1,5 +1,4 @@
 To_do:
-MOVEM
 
 finished:
 NOP
@@ -30,3 +29,4 @@ AND
 OR
 ADD
 SUB
+MOVEM
