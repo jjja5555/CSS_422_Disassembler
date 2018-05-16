@@ -38,46 +38,20 @@
 *       Update:  - 05/15/2018 Martin Huang
 *                   + Debug:  MOVEM
 *                   + Debug:  ROTATION 000 represent number 8
+*       Update:  - 05/16/2018 Martin Huang
+*                   + Update: Now using BCS to detect registerList in MOVEM
+*                   + Bug fixed: word addressing, ANDI, ORI
 *-----------------------------------------------------------
     ORG    $1000
 START:                  ; first instruction of program
+            SUB.W	(A4),D6
+            ADD.W   (A4),D6
 
-
-* Put program code here
-* TEST CODE 
-    MOVEM.W     D0/A1, -(SP)
-    MOVE.B      D2, D2
-    AND.B       D2, D3
-    AND.L       #$4EBF, D3
-    ADD.L       $400, D3
-    ADD.W       (A3)+, D5
-    SUB.W       D3, D6
-    OR.W        $4000, D3
-    OR.L        D3, (A3)
-    MOVE.L      $400, D7
-    MOVE.L      (A1)+, D7
-    MOVE.L      #$1000, D1
-    MULS        #$10, D1
-    DIVU        (A1)+, D1
-    MOVE.W      #$6, D0
-    MOVE.W      #$1, D1
-    MOVE.W      #$5, D2
-    MOVEM.W     D0-D2/A0-A3, $400
-    MOVEM.W     $400, D0-D2
-    MOVEM.W     D0/D1/D2/D3/D4/D5/D6/D7/A1, -(SP)
-    MOVEM.W     D0/D1/D2/D3/D4/D5/D6/D7/A1, (SP)
-    MOVEM.W     D0-D7/A1, -(A7)
-    MOVEM.W     D0-D2/D2-D4/D4-D6/A1, -(SP)
-    MOVEA.W     $00008000, A1
-    MOVEA.W     $FFFF8000, A6
-    SUBI.L      #$10, D7
-    ADDI.L      #$10, D7
-    ADDQ.L      #$8, D7
-    ADDI.L      #$8, D7
+    		MOVE.B	D0,D1
+	
+    		AND.B	#$10,$4568
+    		OR.W	#$10,$4568
     
-    ADDI.W      #$8, D7
-    ADDI.B      #$8, D7
-    ADDQ.B      #8, D7
     
 * -------------------------------------
 * Display welcome message and check the first input address
@@ -439,6 +413,16 @@ DECODE
     ANDI.W  #$FF00, D4
     CMPI.W  #$0400, D4
     BEQ     DISPLAY_SUBI
+    
+    MOVE.W  D3, D4              * decode ANDI
+    ANDI.W  #$FF00, D4
+    CMPI.W  #$0200, D4
+    BEQ     DISPLAY_ANDI
+    
+    MOVE.W  D3, D4              * decode ORI
+    ANDI.W  #$FF00, D4
+    CMPI.W  #$0000, D4
+    BEQ     DISPLAY_ORI
     
     MOVE.W  D3, D4              * decode ADDA
     ANDI.W  #$F0C0, D4
@@ -856,6 +840,87 @@ DISPLAY_ADDI
     JSR     EA_HANDLE
     
     RTS   
+
+* -----------------------------------
+* Display ANDI and its size and its EA mode 1) Dn 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L   
+DISPLAY_ANDI
+    LEA     DAND, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+    LSR.W   #6, D6              * no need to mask it is already a size
+    
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     DIM, A1        
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     LONG_CHECK
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    RTS   
+    
+* -----------------------------------
+* Display ORI and its size and its EA mode 1) Dn 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L   
+DISPLAY_ORI
+    LEA     DOR, A1
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.B   D6
+    MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+    LSR.W   #6, D6              * no need to mask it is already a size
+    
+    JSR     SIZE_HANDLE
+    
+    LEA     space, A1      * space 
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    LEA     DIM, A1        
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    JSR     LONG_CHECK
+    
+    LEA     DComma, A1      * comma
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    JSR     EA_HANDLE
+    
+    RTS   
+
 
 * -----------------------------------
 * Display SUBI and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L      7) IMMEDIATE
@@ -1759,8 +1824,8 @@ DisplayNum
     RTS
     
 Display_FFFF
-    CMPI.W  #$8000, D2
-    BLE     FFFF
+    CMPI.L  #$8000, D2
+    BGE     FFFF
     
     RTS
     
@@ -1828,7 +1893,7 @@ typeInputError  DC.B    'ERROR: Your entered address is not a hex!', CR, LF, 0
 RangeError       DC.B    'ERROR: Address is out of range', CR, LF, 0
 DifferentError   DC.B    'ERROR: Ending address must be greater than Starting address', CR, LF, 0
 OddError         DC.B    'ERROR: Address must be even ', CR, LF, 0
-endDisplay      DC.B     'You have finihsed the decoding', CR, LF,0
+endDisplay      DC.B     'You have finihsed decoding', CR, LF, 0
 enterMessage    DC.B     'Please hit enter to continue', CR, LF, 0
 nullString      DC.B        '', CR, LF, 0
 
@@ -1891,7 +1956,50 @@ DMUL            DC.B    'MUL',0
 Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
+    MOVEA.W #$1000, A1
+    LEA     $9100, A0  *A0<-- 00009100
+ 	MOVEA.W #$4213, A0 *A0<-- 00004213
+	MOVEA.L #$9100, A0 *A0<--- 00009100
+	MOVEA.L #$00004213, A0 *A0<-- 00004213
+	MOVE.L #$00008000, D0
+	MOVEA.W D0, A0
+	
+	
+	MOVE.B  $00004340, D3 *Word addressing
+	MOVE.B  $0000A340, D3 *Long word addressing
+	MOVE.B  $A340, D3     *Long Word addressing
+	MOVE.B  $FFFFA340, D3 *word addressing
+	MOVE.B  $FFFF4340, D3 *long word addressing
+	
+	LEA  $00004340, A1 *Word addressing
+	LEA  $0000A340, A1 *Long word addressing
+	LEA  $A340, A1     *Long Word addressing
+	MOVEA.W #$A340, A1 *Word Addressing
+	LEA  $FFFFA340, A1 *word addressing
+	LEA  $FFFF4340, A1 *long word addressing
+
+	
+	
+	MOVE.L  #$AAAAAAAA, D0
+	MOVE.B  #$BB, D0
+	MOVE.L  #-3, D0
+	ASL.L   #8, D0
+	MOVE.L  #-3, D0
+	ASL.W   #8, D0
+
+	MOVE.L  #$F, D0
+	ASL.B   #5, D0
+
+        MOVEQ   #$11, D0
+	MOVE.L  #$3456ABCF, D0
+	ASR.W 	#3, D0
+	MOVE.L  #$3456ABCF, D0
+	ASL.W 	#3, D0
+
     END    START        ; last line of source
+
+
+
 
 
 
