@@ -35,6 +35,8 @@
 *                   + Decode: OR
 *                   + Decode: ADD
 *                   + Decode: SUB
+*       Update:  - 05/15/2018 Martin Huang
+*                   + Debug:  MOVEA
 *-----------------------------------------------------------
     ORG    $1000
 START:                  ; first instruction of program
@@ -42,6 +44,7 @@ START:                  ; first instruction of program
 
 * Put program code here
 * TEST CODE 
+    MOVEM.W     D0/A1, -(SP)
     MOVE.B      D2, D2
     AND.B       D2, D3
     AND.L       #$4EBF, D3
@@ -58,8 +61,8 @@ START:                  ; first instruction of program
     MOVE.W      #$6, D0
     MOVE.W      #$1, D1
     MOVE.W      #$5, D2
-    MOVEM.W     D0-D2, $400
-    MOVEM.W     $400, D4-D6
+    MOVEM.W     D0-D2/A0-A3, $400
+    MOVEM.W     $400, D0-D2
     MOVEM.W     D0/D1/D2/D3/D4/D5/D6/D7/A1, -(SP)
     MOVEM.W     D0/D1/D2/D3/D4/D5/D6/D7/A1, (SP)
     MOVEM.W     D0-D7/A1, -(A7)
@@ -99,8 +102,6 @@ UserStartAddress
 
     CMP.B   #1, D6              * check if D6 is set, if yes return to start input
     BEQ     UserStartAddress
-
-    *MOVEA.L #$00000000, A1      * Clear A1 
     MOVE.L  D2, A5              * Load accepted STARTING address into A5
  
 * -------------------------------------
@@ -1151,12 +1152,23 @@ DISPLAY_MOVEM
 
 
 MOVEM_DIR
+    CLR.L   D5                  * Clear register
+    CLR.L   D4
+    
+    MOVE.W  D3, D4              * D4 to store EA mode
+    MOVE.W  D3, D5              * D5 to store EA register
+    
+    LSR.W   #3, D4              * rotate for EA mode
+    ANDI.W  #$0007, D4          * mask last 3 bits
+    ANDI.W  #$0007, D5          * mask last 3 bits
+    
     MOVE.W  D3, D6
     ANDI.W  #$0400, D6
     CMPI.W  #$0400, D6
     BEQ     MEM2REG
     
-    JSR     Display_register1
+    CLR.L   D1
+    JSR     Display_register2
     LEA     DComma, A1      * comma
     MOVE.B  #14, D0
     TRAP    #15
@@ -1189,14 +1201,98 @@ MEM2REG
     MOVE.B  #14, D0
     TRAP    #15
     
+    CLR.L   D1
+    JSR     Display_register2  
     RTS
  
-* ---------------------------------------------
-* Display the register list from D7
-Display_register1
-    RTS
-    
 
+* ---------------------------------------------
+* Display the register list from D7     Use D5 to mask   Use D1 to store Register number flag
+Display_register2  
+    CMPI.B  #4, D4
+    BEQ     Display_register_D
+    CMPI.B  #16, D1
+    BGE     END_D
+    CLR.L   D5
+    MOVE.W  D7, D5
+    ANDI.W  #1, D5
+    CMPI.B  #1, D5
+    BEQ     PRINT_REGISTER
+    ADDI.B   #1, D1
+    ROR.W   #1, D7
+    JMP     Display_register2
+
+Display_register_D  
+    CMPI.B  #16, D1
+    BGE     END_D
+    CLR.L   D5
+    ROL.W   #1, D7
+    MOVE.W  D7, D5
+    ANDI.W  #1, D5
+    CMPI.B  #1, D5
+    BEQ     PRINT_REGISTER
+    ADDI.B   #1, D1
+    JMP     Display_register_D
+    
+END_D
+    
+    RTS   
+PRINT_REGISTER
+    CMPI.B  #8, D1
+    BGE     PRINT_A
+    LEA     DDn, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.B  #3, D0
+    TRAP    #15
+    
+    ADDI.B   #1, D1
+    
+    CMPI.B  #15, D1
+    BEQ     END_D
+    
+    LEA     DSLASH, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CMPI.B  #4, D4
+    BEQ     ROL_W
+    ROR.W   #1, D7
+    
+    
+    JMP     Display_register2
+
+
+PRINT_A
+    LEA     DAn, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    SUBI.B  #8, D1
+    MOVE.B  #3, D0
+    TRAP    #15
+    ADDI.B  #8, D1
+    
+    ADDI.B   #1, D1
+    
+    CMPI.B  #15, D1
+    BEQ     END_D
+    
+    LEA     DSLASH, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    
+    CMPI.B  #4, D4
+    BEQ     ROL_W
+    ROR.W   #1, D7
+    
+    
+    JMP     Display_register2
+
+ROL_W
+    JMP     Display_register_D
 * -------------------------------------------
 * Display AND instruction and source and destination EA mode
 DISPLAY_AND   
@@ -1793,12 +1889,17 @@ DAND            DC.B    'AND',0
 DOR             DC.B    'OR',0
 DADD            DC.B    'ADD',0
 DSUB            DC.B    'SUB',0
+DSLASH          DC.B    '/',0
+
 * SIGN OR UNSIGN
 DMUL            DC.B    'MUL',0
 Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
     END    START        ; last line of source
+
+
+
 
 
 
