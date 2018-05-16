@@ -36,7 +36,8 @@
 *                   + Decode: ADD
 *                   + Decode: SUB
 *       Update:  - 05/15/2018 Martin Huang
-*                   + Debug:  MOVEA
+*                   + Debug:  MOVEM
+*                   + Debug:  ROTATION 000 represent number 8
 *-----------------------------------------------------------
     ORG    $1000
 START:                  ; first instruction of program
@@ -622,7 +623,7 @@ DISPLAY_ROTATION_R
     
     CLR.L   D6
     MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
-    LSR.W   #6, D6              * no need to mask it is already a size
+    LSR.W   #6, D6              
     JSR     SIZE_HANDLE
     
     LEA     space, A1      * space 
@@ -1684,6 +1685,10 @@ IORR
     ROL.W   #7, D5
     ANDI    #$0007, D5
     
+    MOVE.B  D5, D2
+    JSR     ZERO2EIGHT
+    MOVE.B  D2, D5
+    
     CLR.L   D1
     MOVE.B  D5, D1
     JSR     DisplayNum
@@ -1897,6 +1902,8 @@ Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
     END    START        ; last line of source
+
+
 
 
 
