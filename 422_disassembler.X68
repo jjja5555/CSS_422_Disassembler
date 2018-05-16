@@ -378,10 +378,10 @@ LONG_DISPLAY
 DECODE
     MOVE.W  D3, D4
     
-    CMPI.L  #$4E75, D3          * decode RTS
+    CMPI.W  #$4E75, D3          * decode RTS
     BEQ     DISPLAY_RTS
     
-    CMPI.L  #$4E71, D3          * decode NOP
+    CMPI.W  #$4E71, D3          * decode NOP
     BEQ     DISPLAY_NOP
 
     ANDI.W  #$FFC0, D4          * decode JSR
@@ -443,9 +443,12 @@ DECODE
     CMPI.W  #$D0C0, D4
     BEQ     DISPLAY_ADDA     
 
-    MOVE.W  D3, D4              * decode ADDA
-    ANDI.W  #$C040, D4
-    CMPI.W  #$0040, D4
+    MOVE.W  D3, D4              * decode MOVEA
+    ANDI.W  #$F040, D4
+    CMPI.W  #$3040, D4
+    BEQ     DISPLAY_MOVEA    
+    ANDI.W  #$F040, D4
+    CMPI.W  #$2040, D4
     BEQ     DISPLAY_MOVEA    
     
     MOVE.W  D3, D4              * decode MULS/ MULU
@@ -1153,6 +1156,7 @@ MOVEM_DIR
     CMPI.W  #$0400, D6
     BEQ     MEM2REG
     
+    JSR     Display_register1
     LEA     DComma, A1      * comma
     MOVE.B  #14, D0
     TRAP    #15
@@ -1184,7 +1188,14 @@ MEM2REG
     LEA     DComma, A1      * comma
     MOVE.B  #14, D0
     TRAP    #15
+    
     RTS
+ 
+* ---------------------------------------------
+* Display the register list from D7
+Display_register1
+    RTS
+    
 
 * -------------------------------------------
 * Display AND instruction and source and destination EA mode
@@ -1788,6 +1799,8 @@ Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
     END    START        ; last line of source
+
+
 
 
 
