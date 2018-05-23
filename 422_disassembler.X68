@@ -745,7 +745,7 @@ DISPLAY_MOVEQ
     TRAP    #15
     
     CLR.L   D2              * 8 bit number
-    MOVE.B  D3, D2
+    MOVE.B  D3, D2          * Move last 8 bits to display
     MOVE.B  #4, $400
     JSR Display_Address
     
@@ -1997,6 +1997,7 @@ Dsigned         DC.B    'S',0
 	ASL.W 	#3, D0
 
     END    START        ; last line of source
+
 
 
 
