@@ -41,6 +41,9 @@
 *       Update:  - 05/16/2018 Martin Huang
 *                   + Update: Now using BCS to detect registerList in MOVEM
 *                   + Bug fixed: word addressing, ANDI, ORI
+*        Update:  - 05/24/2018 Martin
+*                   + Debug:  MOVEM
+*                   +         It works under every condition 
 *-----------------------------------------------------------
     ORG    $1000
 START:                  ; first instruction of program
@@ -93,6 +96,13 @@ UserEndAddress
     CLR.L   D2                  * D2 to store hexadecimal address
     CLR.B   D6                  * Use D6 as flag for error in input (out of range OR non-Hex char): 1 == error, 0 == okay
     
+    * TODO 
+*    CMP.B   #102, (A1)      * check lower case f = 102. If the character is greater than 102 it is not hex
+*    BGT     INPUT_ERROR
+*    
+*    CMP.B   #97, (A1)      * check lower case f = 102. If the character is greater than 102 it is not hex
+*    BGE     INPUT_ERROR
+    
     JSR     LOWER_CASE_CHECK    * branch to check input
 
     CMP.B   #1, D6              * check if D6 is set, if yes return to start input
@@ -107,7 +117,6 @@ UserEndAddress
     CMP.B   #1, D6              * check if D6 is set, if yes return to start input
     BEQ     UserEndAddress
 
-    *MOVEA.L #$00000000, A1      * Clear A1 
     MOVE.L  D2, A6              * Load accepted Ending address into A6
 
     MOVE.B  #0, $410             * Use $00000412 to store line count
@@ -1204,10 +1213,17 @@ CWORD
 * Display MOVEM PUSH AND POP, WORKING EA MODE 2) (An) 3) (An)+ 4) -(An) 7) .W 7) .W
 * REGISTER LOCATIONS are stored in D7
 DISPLAY_MOVEM 
-    MOVE.W  (A5)+, D7   
     LEA     DMOVEM, A1
     MOVE.B  #14, D0
     TRAP    #15
+    
+    CLR.L   D6
+    MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L       01 11 10
+    LSR.W   #6, D6              * shift size right
+    SUBQ    #1, D6
+    JSR     SIZE_HANDLE
+    
+    MOVE.W  (A5)+, D7   
     
     LEA     space, A1      * space 
     MOVE.B  #14, D0
@@ -1275,7 +1291,7 @@ Display_register_BCS
     CMPI.B  #4, D4
     BEQ     Display_register_D
     
-    CMPI.B  #0, D7
+    CMPI.W  #0, D7
     BEQ     END_D
     CLR.L   D5
     LSR.W   #1, D7
@@ -1956,47 +1972,46 @@ DMUL            DC.B    'MUL',0
 Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
-    MOVEA.W #$1000, A1
-    LEA     $9100, A0  *A0<-- 00009100
- 	MOVEA.W #$4213, A0 *A0<-- 00004213
-	MOVEA.L #$9100, A0 *A0<--- 00009100
-	MOVEA.L #$00004213, A0 *A0<-- 00004213
-	MOVE.L #$00008000, D0
-	MOVEA.W D0, A0
-	
-	
-	MOVE.B  $00004340, D3 *Word addressing
-	MOVE.B  $0000A340, D3 *Long word addressing
-	MOVE.B  $A340, D3     *Long Word addressing
-	MOVE.B  $FFFFA340, D3 *word addressing
-	MOVE.B  $FFFF4340, D3 *long word addressing
-	
-	LEA  $00004340, A1 *Word addressing
-	LEA  $0000A340, A1 *Long word addressing
-	LEA  $A340, A1     *Long Word addressing
-	MOVEA.W #$A340, A1 *Word Addressing
-	LEA  $FFFFA340, A1 *word addressing
-	LEA  $FFFF4340, A1 *long word addressing
+            MOVEM.L   (A1)+,D1-D7
+            MOVEM.W   (A1)+,A1/D7
+            MOVEM.L   (A1)+,A1/D7
+            MOVEM.W   (A1),A1-A7
+            
+            MOVEM.W   A1-A7,$12
+    MOVEM.L   D1-D7,$12
+    MOVEM.W   A1/D7,$12
+    MOVEM.L   A1/D7,$12
+    MOVEM.W   A1-A7,$1234
+    MOVEM.L   D1-D7,$1234
+    MOVEM.W   A1/D7,$1234
+    MOVEM.L   A1/D7,$1234
+    MOVEM.W   A1-A7,$12345678
+    MOVEM.L   D1-D7,$12345678
+    MOVEM.W   A1/D7,$12345678
+    MOVEM.L   A1/D7,$12345678
+    MOVEM.W   $12,A1-A7
+    MOVEM.L   $12,D1-D7
+    MOVEM.W   $12,A1/D7
+    MOVEM.L   $12,A1/D7
+    MOVEM.W   $1234,A1-A7
+    MOVEM.L   $1234,D1-D7
+    MOVEM.W   $1234,A1/D7
+    MOVEM.L   $1234,A1/D7
+    MOVEM.W   $12345678,A1-A7
+    MOVEM.L   $12345678,D1-D7
+    MOVEM.W   $12345678,A1/D7
+    MOVEM.L   $12345678,A1/D7
+
+
 
 	
 	
-	MOVE.L  #$AAAAAAAA, D0
-	MOVE.B  #$BB, D0
-	MOVE.L  #-3, D0
-	ASL.L   #8, D0
-	MOVE.L  #-3, D0
-	ASL.W   #8, D0
 
-	MOVE.L  #$F, D0
-	ASL.B   #5, D0
-
-        MOVEQ   #$11, D0
-	MOVE.L  #$3456ABCF, D0
-	ASR.W 	#3, D0
-	MOVE.L  #$3456ABCF, D0
-	ASL.W 	#3, D0
 
     END    START        ; last line of source
+
+
+
 
 
 
