@@ -44,9 +44,12 @@
 *        Update:  - 05/24/2018 Martin
 *                   + Debug:  MOVEM
 *                   +         It works under every condition 
+*       Update:   - 5/26/2018 Chris
+*                   +Modified so data outputs one page at a time
+*                   +Modified so after decoding program prompts user to go again
 *-----------------------------------------------------------
-    ORG    $1000
-START:                  ; first instruction of program
+START      ORG    $1000     *First instruction of program
+                    
             SUB.W	(A4),D6
             ADD.W   (A4),D6
 
@@ -63,8 +66,8 @@ UserStartAddress
     LEA     startInput, A1      * Prompt input for start address
     MOVE.B  #14, D0
     TRAP    #15
-
-    *MOVEA.L #$00000000, A1      * Clear A1 to for user input with trap task #2
+    MOVEA.L #$0, A1      * Clear A1 so data at address doesn't get modified
+    
     MOVE.B  #2, D0
     TRAP    #15
     
@@ -89,7 +92,7 @@ UserEndAddress
     MOVE.B  #14, D0
     TRAP    #15
 
-    *MOVEA.L #$00000000, A1      * Clear A1 to for user input with trap task #2
+    MOVEA.L #$0, A1      * Clear A1 so data at address doesn't get modified
     MOVE.B  #2, D0
     TRAP    #15
     
@@ -120,16 +123,23 @@ UserEndAddress
     MOVE.L  D2, A6              * Load accepted Ending address into A6
 
     MOVE.B  #0, $410             * Use $00000412 to store line count
+    
+    MOVEA.W #$600,A2             *Address to hold counter for lines printed per page
+    MOVE.B  #$1D,(A2)           *0x20 lines per page 
 * ------------------------------------------
 * Check if address pointer reaches the end
 * Move word size data into D3
 * Move long size adderss into D2
 * Use D4 to mask if necessary 
 ReadMemory    
-    
-    
+    MOVEA.W #$600,A2             *move counter variabled to A2
+    SUB.B   #1,(A2)             *decrement lines-per-page counter
+    CMP.B   #0,(A2)             *Check if lines-per-page counter has reached 0
+    BEQ     WAIT_FOR_PROMPT     *wait for prompt to continue output 
+
+RETURN_FROM_PROMPT
     CMPA.L  A5, A6              * check if reach the end
-    BLE     END
+    BLE     DECODING_FINISHED
     
     MOVE.L  A5, D2              * move address to D2  to display
     MOVE.W (A5)+, D3            * store data to D3 for further use
@@ -153,6 +163,18 @@ ReadMemory
     TRAP    #15
     
     JMP ReadMemory      * loop
+
+*----------------------------------------------------------------------------
+*Outputs prompt after the screen fills with output. Waits until user responds
+WAIT_FOR_PROMPT
+    LEA     enterMessage,A1
+    MOVE.B  #14,D0
+    Trap #15
+    MOVEA.L #0,A1
+    MOVE.B  #2,D0
+    Trap #15 
+    MOVE.B  #$1D,(A2)      
+    BRA RETURN_FROM_PROMPT
 
 * ---------------------------------------
 * handle EA mode, moed must be stored in D4, and register must be stored in D5
@@ -1889,10 +1911,37 @@ D_S_HANDLE
     MOVE.B  #14, D0
     TRAP    #15
     RTS    
-END
+
+*-------------------------------------
+*Handle end of user requested decoding.
+*Prompt user to go again.    
+DECODING_FINISHED
     LEA     endDisplay, A1
     MOVE.B  #14, D0
     TRAP    #15
+    LEA     goAgainPrompt,A1
+    Trap #15
+    MOVE.B  #2,D0
+    MOVE.w  #$700,A1
+    Trap #15
+    CMP.B   #$59,(A1)
+    BEQ     GO_AGAIN_PREP
+    CMP.B   #$79,(A1)
+    BNE     EXIT
+    
+*------------------------------------
+*Prep system for another round of decoding.
+*Clear data registers
+GO_AGAIN_PREP
+    CLR.L   D0
+    CLR.L   D1
+    CLR.L   D2
+    CLR.L   D3
+    CLR.L   D4
+    CLR.L   D5
+    CLR.L   D6
+    CLR.L   D7
+    BRA     userStartAddress 
     
 * -----------------------------------------------------------------------------------------------------------
 * Variables and constants 
@@ -1911,6 +1960,7 @@ DifferentError   DC.B    'ERROR: Ending address must be greater than Starting ad
 OddError         DC.B    'ERROR: Address must be even ', CR, LF, 0
 endDisplay      DC.B     'You have finihsed decoding', CR, LF, 0
 enterMessage    DC.B     'Please hit enter to continue', CR, LF, 0
+goAgainPrompt   DC.B    'Would you like to go again? (y/n)',CR,LF,0
 nullString      DC.B        '', CR, LF, 0
 
 * INSTRUCTION SET
@@ -1972,14 +2022,14 @@ DMUL            DC.B    'MUL',0
 Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
-<<<<<<< HEAD
+*<<<<<<< HEAD
             MOVEM.L   (A1)+,D1-D7
             MOVEM.W   (A1)+,A1/D7
             MOVEM.L   (A1)+,A1/D7
             MOVEM.W   (A1),A1-A7
             
             MOVEM.W   A1-A7,$12
-=======
+*=======
 NOP
     RTS
     NOP
@@ -2363,7 +2413,7 @@ label3
     MOVE.L    #$12345678,(A1)+
     MOVE.L    #$12345678,-(A1)
     MOVEM.W   A1-A7,$12
->>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
+*>>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
     MOVEM.L   D1-D7,$12
     MOVEM.W   A1/D7,$12
     MOVEM.L   A1/D7,$12
@@ -2387,14 +2437,14 @@ label3
     MOVEM.L   $12345678,D1-D7
     MOVEM.W   $12345678,A1/D7
     MOVEM.L   $12345678,A1/D7
-<<<<<<< HEAD
+*<<<<<<< HEAD
 
 
 
 	
 	
 
-=======
+*=======
     ADD.B     D1,$12
     ADD.B     D1,$1234
     ADD.B     D1,$12345678
@@ -2524,8 +2574,9 @@ label4    CMP.B     $12,D1
     BTST      #1,D1
 
 
->>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
+*>>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
 
+EXIT
     END    START        ; last line of source
 
 
@@ -2558,6 +2609,7 @@ label4    CMP.B     $12,D1
 
 =======
 >>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
+
 *~Font name~Courier New~
 *~Font size~10~
 *~Tab type~1~
