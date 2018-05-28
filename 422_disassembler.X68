@@ -44,6 +44,7 @@
 *        Update:  - 05/24/2018 Martin
 *                   + Debug:  MOVEM
 *                   +         It works under every condition 
+*                   + Debug:  MOVE, Now it can identify MOVEA and MOVE
 *-----------------------------------------------------------
     ORG    $1000
 START:                  ; first instruction of program
@@ -439,10 +440,10 @@ DECODE
     BEQ     DISPLAY_ADDA     
 
     MOVE.W  D3, D4              * decode MOVEA
-    ANDI.W  #$F040, D4
+    ANDI.W  #$F1C0, D4
     CMPI.W  #$3040, D4
     BEQ     DISPLAY_MOVEA    
-    ANDI.W  #$F040, D4
+    ANDI.W  #$F1C0, D4
     CMPI.W  #$2040, D4
     BEQ     DISPLAY_MOVEA    
     
@@ -1972,14 +1973,12 @@ DMUL            DC.B    'MUL',0
 Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
 
-<<<<<<< HEAD
             MOVEM.L   (A1)+,D1-D7
             MOVEM.W   (A1)+,A1/D7
             MOVEM.L   (A1)+,A1/D7
             MOVEM.W   (A1),A1-A7
             
             MOVEM.W   A1-A7,$12
-=======
 NOP
     RTS
     NOP
@@ -2363,7 +2362,6 @@ label3
     MOVE.L    #$12345678,(A1)+
     MOVE.L    #$12345678,-(A1)
     MOVEM.W   A1-A7,$12
->>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
     MOVEM.L   D1-D7,$12
     MOVEM.W   A1/D7,$12
     MOVEM.L   A1/D7,$12
@@ -2387,14 +2385,9 @@ label3
     MOVEM.L   $12345678,D1-D7
     MOVEM.W   $12345678,A1/D7
     MOVEM.L   $12345678,A1/D7
-<<<<<<< HEAD
 
 
 
-	
-	
-
-=======
     ADD.B     D1,$12
     ADD.B     D1,$1234
     ADD.B     D1,$12345678
@@ -2524,40 +2517,7 @@ label4    CMP.B     $12,D1
     BTST      #1,D1
 
 
->>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
-
     END    START        ; last line of source
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
 *~Font name~Courier New~
 *~Font size~10~
 *~Tab type~1~
