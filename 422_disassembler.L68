@@ -1,0 +1,2764 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.16.01
+Created On: 5/26/2018 6:07:25 AM
+
+00000000                             1  *-----------------------------------------------------------
+00000000                             2  * Title      : 422 Disassembler 
+00000000                             3  * Written by : 
+00000000                             4  * Date       : 05/10/2018
+00000000                             5  * Description: Read string input and put that into Hexadecimal value as starting and ending address to 
+00000000                             6  *              decode.
+00000000                             7  *           
+00000000                             8  *       Update: - 05/12/2018  Martin Huang
+00000000                             9  *                   + Add user input stored start address in A5 and ending address in A6
+00000000                            10  *       Update: - 05/13/2018  Martin Huang
+00000000                            11  *                   + Decode: NOP, RTS   
+00000000                            12  *                   + Decode: EA   1) EA mode store in D4 and EA register stored in D5
+00000000                            13  *                   + EA mode:  0) Dn 
+00000000                            14  *                               1) An 
+00000000                            15  *                               2) (An)
+00000000                            16  *                               3) (An)+
+00000000                            17  *                               4) -(An)
+00000000                            18  *                               7) absolute_word, absolute_long, immediate data(haven't finished)
+00000000                            19  *                   + Decode: JSR
+00000000                            20  *       Update: - 05/14/2018  Martin Huang
+00000000                            21  *                   + Decode: NEG
+00000000                            22  *                   + Size handle: size must be stored in D6 for further use    
+00000000                            23  *                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (memory shift one bit) 
+00000000                            24  *                   + Decode: ASR, ASL, LSR, LSL, ROR, ROL (register shift)
+00000000                            25  *                   + Decode: LEA
+00000000                            26  *                   + Decode: CMP
+00000000                            27  *                   + Decode: MOVEQ, ADDQ, ADDI
+00000000                            28  *                   + Decode: ADDA
+00000000                            29  *                   + added: address control, word size (0 - 7fff) (ffff8000 - ffffffff)
+00000000                            30  *                   + Decode: MOVEA, MULS, MULU, DIVU
+00000000                            31  *                   + Decode: BCC, BGT, BLE
+00000000                            32  *                   + Decode: MOVE
+00000000                            33  *                   + Decode: MOVEM         4880 MASK FB80
+00000000                            34  *                   + Decode: AND
+00000000                            35  *                   + Decode: OR
+00000000                            36  *                   + Decode: ADD
+00000000                            37  *                   + Decode: SUB
+00000000                            38  *       Update:  - 05/15/2018 Martin Huang
+00000000                            39  *                   + Debug:  MOVEM
+00000000                            40  *                   + Debug:  ROTATION 000 represent number 8
+00000000                            41  *       Update:  - 05/16/2018 Martin Huang
+00000000                            42  *                   + Update: Now using BCS to detect registerList in MOVEM
+00000000                            43  *                   + Bug fixed: word addressing, ANDI, ORI
+00000000                            44  *        Update:  - 05/24/2018 Martin
+00000000                            45  *                   + Debug:  MOVEM
+00000000                            46  *                   +         It works under every condition 
+00000000                            47  *       Update:   - 5/26/2018 Chris
+00000000                            48  *                   +Modified so data outputs one page at a time
+00000000                            49  *                   +Modified so after decoding program prompts user to go again
+00000000                            50  *-----------------------------------------------------------
+00001000                            51  START      ORG    $1000     *First instruction of program
+00001000                            52                      
+00001000  9C54                      53              SUB.W   (A4),D6
+00001002  DC54                      54              ADD.W   (A4),D6
+00001004                            55  
+00001004  1200                      56              MOVE.B  D0,D1
+00001006                            57      
+00001006  0238 0010 4568            58              AND.B   #$10,$4568
+0000100C  0078 0010 4568            59              OR.W    #$10,$4568
+00001012                            60      
+00001012                            61      
+00001012                            62  * -------------------------------------
+00001012                            63  * Display welcome message and check the first input address
+00001012                            64  UserStartAddress
+00001012                            65      
+00001012  43F9 000020B8             66      LEA     startInput, A1      * Prompt input for start address
+00001018  103C 000E                 67      MOVE.B  #14, D0
+0000101C  4E4F                      68      TRAP    #15
+0000101E  227C 00000000             69      MOVEA.L #$0, A1      * Clear A1 so data at address doesn't get modified
+00001024                            70      
+00001024  103C 0002                 71      MOVE.B  #2, D0
+00001028  4E4F                      72      TRAP    #15
+0000102A                            73      
+0000102A  4282                      74      CLR.L   D2                  * D2 to store hexadecimal address
+0000102C  4206                      75      CLR.B   D6                  * Use D6 as flag for error in input
+0000102E                            76      
+0000102E  4EB9 00001E04             77      JSR     LOWER_CASE_CHECK    * branch to check input
+00001034                            78  
+00001034  BC3C 0001                 79      CMP.B   #1, D6              * check if D6 is set, if yes return to start input
+00001038  67D8                      80      BEQ     UserStartAddress
+0000103A                            81  
+0000103A  4EB9 00001D9C             82      JSR     RANGE_CHECK         * branch to check range($00001000 to $00FFFFFF)
+00001040                            83  
+00001040  BC3C 0001                 84      CMP.B   #1, D6              * check if D6 is set, if yes return to start input
+00001044  67CC                      85      BEQ     UserStartAddress
+00001046  2A42                      86      MOVE.L  D2, A5              * Load accepted STARTING address into A5
+00001048                            87   
+00001048                            88  * -------------------------------------
+00001048                            89  * Ccheck the second input address   
+00001048                            90  UserEndAddress
+00001048  43F9 0000212B             91      LEA     endInput, A1      * Prompt input for end address
+0000104E  103C 000E                 92      MOVE.B  #14, D0
+00001052  4E4F                      93      TRAP    #15
+00001054                            94  
+00001054  227C 00000000             95      MOVEA.L #$0, A1      * Clear A1 so data at address doesn't get modified
+0000105A  103C 0002                 96      MOVE.B  #2, D0
+0000105E  4E4F                      97      TRAP    #15
+00001060                            98      
+00001060  4282                      99      CLR.L   D2                  * D2 to store hexadecimal address
+00001062  4206                     100      CLR.B   D6                  * Use D6 as flag for error in input (out of range OR non-Hex char): 1 == error, 0 == okay
+00001064                           101      
+00001064                           102      * TODO 
+00001064                           103  *    CMP.B   #102, (A1)      * check lower case f = 102. If the character is greater than 102 it is not hex
+00001064                           104  *    BGT     INPUT_ERROR
+00001064                           105  *    
+00001064                           106  *    CMP.B   #97, (A1)      * check lower case f = 102. If the character is greater than 102 it is not hex
+00001064                           107  *    BGE     INPUT_ERROR
+00001064                           108      
+00001064  4EB9 00001E04            109      JSR     LOWER_CASE_CHECK    * branch to check input
+0000106A                           110  
+0000106A  BC3C 0001                111      CMP.B   #1, D6              * check if D6 is set, if yes return to start input
+0000106E  67D8                     112      BEQ     UserEndAddress
+00001070                           113  
+00001070  4EB9 00001D9C            114      JSR     RANGE_CHECK         * branch to check range($00001000 to $00FFFFFF)
+00001076                           115  
+00001076  BC3C 0001                116      CMP.B   #1, D6              * check if D6 is set, if yes return to start input
+0000107A  67CC                     117      BEQ     UserEndAddress
+0000107C                           118      
+0000107C  4EB9 00001DC2            119      JSR     DIFFERENCE_CHECK
+00001082  BC3C 0001                120      CMP.B   #1, D6              * check if D6 is set, if yes return to start input
+00001086  67C0                     121      BEQ     UserEndAddress
+00001088                           122  
+00001088  2C42                     123      MOVE.L  D2, A6              * Load accepted Ending address into A6
+0000108A                           124  
+0000108A  11FC 0000 0410           125      MOVE.B  #0, $410             * Use $00000412 to store line count
+00001090                           126      
+00001090  347C 0600                127      MOVEA.W #$600,A2             *Address to hold counter for lines printed per page
+00001094  14BC 001D                128      MOVE.B  #$1D,(A2)           *0x20 lines per page 
+00001098                           129  * ------------------------------------------
+00001098                           130  * Check if address pointer reaches the end
+00001098                           131  * Move word size data into D3
+00001098                           132  * Move long size adderss into D2
+00001098                           133  * Use D4 to mask if necessary 
+00001098                           134  ReadMemory    
+00001098  347C 0600                135      MOVEA.W #$600,A2             *move counter variabled to A2
+0000109C  5312                     136      SUB.B   #1,(A2)             *decrement lines-per-page counter
+0000109E  0C12 0000                137      CMP.B   #0,(A2)             *Check if lines-per-page counter has reached 0
+000010A2  6700 0044                138      BEQ     WAIT_FOR_PROMPT     *wait for prompt to continue output 
+000010A6                           139  
+000010A6                           140  RETURN_FROM_PROMPT
+000010A6  BDCD                     141      CMPA.L  A5, A6              * check if reach the end
+000010A8  6F00 0FC2                142      BLE     DECODING_FINISHED
+000010AC                           143      
+000010AC  240D                     144      MOVE.L  A5, D2              * move address to D2  to display
+000010AE  361D                     145      MOVE.W (A5)+, D3            * store data to D3 for further use
+000010B0  11FC 0008 0400           146      MOVE.B  #8, $400            * use ($400) to store roatate count
+000010B6  4EB9 00001EBE            147      JSR Display_Address_L
+000010BC                           148      
+000010BC  4282                     149      CLR.L   D2         
+000010BE  3403                     150      MOVE.W  D3,D2               * move data to D2 to display
+000010C0  11FC 0004 0400           151      MOVE.B  #4, $400            * reset ($400)
+000010C6                           152      
+000010C6  43F9 000020B1            153      LEA     space, A1      * space between address and data
+000010CC  103C 000E                154      MOVE.B  #14, D0
+000010D0  4E4F                     155      TRAP    #15
+000010D2                           156      
+000010D2  4EB9 000012D2            157      JSR DECODE
+000010D8                           158      
+000010D8                           159      *JSR SCREENSTOP
+000010D8                           160      
+000010D8  43F9 000020AE            161      LEA     nl, A1      * new line
+000010DE  103C 000E                162      MOVE.B  #14, D0
+000010E2  4E4F                     163      TRAP    #15
+000010E4                           164      
+000010E4  4EF8 1098                165      JMP ReadMemory      * loop
+000010E8                           166  
+000010E8                           167  *----------------------------------------------------------------------------
+000010E8                           168  *Outputs prompt after the screen fills with output. Waits until user responds
+000010E8                           169  WAIT_FOR_PROMPT
+000010E8  43F9 00002238            170      LEA     enterMessage,A1
+000010EE  103C 000E                171      MOVE.B  #14,D0
+000010F2  4E4F                     172      Trap #15
+000010F4  227C 00000000            173      MOVEA.L #0,A1
+000010FA  103C 0002                174      MOVE.B  #2,D0
+000010FE  4E4F                     175      Trap #15 
+00001100  14BC 001D                176      MOVE.B  #$1D,(A2)      
+00001104  60A0                     177      BRA RETURN_FROM_PROMPT
+00001106                           178  
+00001106                           179  * ---------------------------------------
+00001106                           180  * handle EA mode, moed must be stored in D4, and register must be stored in D5
+00001106                           181  EA_HANDLE
+00001106  0C44 0000                182      CMPI.W  #0, D4
+0000110A  6700 002C                183      BEQ     EA_Dn
+0000110E                           184      
+0000110E  0C44 0001                185      CMPI.W  #1, D4
+00001112  6700 0042                186      BEQ     EA_An
+00001116                           187      
+00001116  0C44 0002                188      CMPI.W  #2, D4
+0000111A  6700 0058                189      BEQ     EA_AnIndirect
+0000111E                           190  
+0000111E  0C44 0003                191      CMPI.W  #3, D4
+00001122  6700 007A                192      BEQ     EA_Anplus
+00001126                           193      
+00001126  0C44 0004                194      CMPI.W  #4, D4
+0000112A  6700 009C                195      BEQ     EA_minusAn
+0000112E                           196      
+0000112E  0C44 0007                197      CMPI.W  #7, D4
+00001132  6700 00BE                198      BEQ     EA_AB_IM
+00001136                           199  
+00001136  4E75                     200      RTS
+00001138                           201  
+00001138                           202  * ---------------------------------------
+00001138                           203  * EA data register, D5 stores register number
+00001138                           204  EA_Dn
+00001138  43F9 00002292            205      LEA     DDn, A1     
+0000113E  103C 000E                206      MOVE.B  #14, D0
+00001142  4E4F                     207      TRAP    #15
+00001144                           208      
+00001144  4281                     209      CLR.L   D1
+00001146  1205                     210      MOVE.B  D5, D1
+00001148  4EB9 00001FF2            211      JSR     DisplayNum
+0000114E  103C 0006                212      MOVE.B  #6, D0
+00001152  4E4F                     213      TRAP    #15
+00001154  4E75                     214      RTS
+00001156                           215  
+00001156                           216  * ---------------------------------------
+00001156                           217  * EA address register, D5 stores register number
+00001156                           218  EA_An
+00001156  43F9 00002294            219      LEA     DAn, A1     
+0000115C  103C 000E                220      MOVE.B  #14, D0
+00001160  4E4F                     221      TRAP    #15
+00001162                           222      
+00001162  4281                     223      CLR.L   D1
+00001164  1205                     224      MOVE.B  D5, D1
+00001166  4EB9 00001FF2            225      JSR     DisplayNum
+0000116C  103C 0006                226      MOVE.B  #6, D0
+00001170  4E4F                     227      TRAP    #15  
+00001172  4E75                     228      RTS 
+00001174                           229    
+00001174                           230  * ---------------------------------------
+00001174                           231  * EA address indirect with post incrementing, D5 stores register number
+00001174                           232  EA_Anindirect
+00001174  43F9 00002296            233      LEA     DAnplus, A1     
+0000117A  103C 000E                234      MOVE.B  #14, D0
+0000117E  4E4F                     235      TRAP    #15
+00001180                           236      
+00001180  4281                     237      CLR.L   D1
+00001182  1205                     238      MOVE.B  D5, D1
+00001184  4EB9 00001FF2            239      JSR     DisplayNum
+0000118A  103C 0006                240      MOVE.B  #6, D0
+0000118E  4E4F                     241      TRAP    #15
+00001190                           242      
+00001190  43F9 00002299            243      LEA     DAnplusN, A1     
+00001196  103C 000E                244      MOVE.B  #14, D0
+0000119A  4E4F                     245      TRAP    #15 
+0000119C  4E75                     246      RTS
+0000119E                           247      
+0000119E                           248  * ---------------------------------------
+0000119E                           249  * EA address indirect with pre decrementing, D5 stores register number  
+0000119E                           250  EA_Anplus
+0000119E  43F9 00002296            251      LEA     DAnplus, A1     
+000011A4  103C 000E                252      MOVE.B  #14, D0
+000011A8  4E4F                     253      TRAP    #15
+000011AA                           254      
+000011AA  4281                     255      CLR.L   D1
+000011AC  1205                     256      MOVE.B  D5, D1
+000011AE  4EB9 00001FF2            257      JSR     DisplayNum
+000011B4  103C 0006                258      MOVE.B  #6, D0
+000011B8  4E4F                     259      TRAP    #15
+000011BA                           260      
+000011BA  43F9 0000229B            261      LEA     DAnplusP, A1     
+000011C0  103C 000E                262      MOVE.B  #14, D0
+000011C4  4E4F                     263      TRAP    #15 
+000011C6  4E75                     264      RTS
+000011C8                           265  * ---------------------------------------
+000011C8                           266  * EA data register, D5 stores register number  
+000011C8                           267  EA_minusAn
+000011C8  43F9 0000229E            268      LEA     DminusAn, A1     
+000011CE  103C 000E                269      MOVE.B  #14, D0
+000011D2  4E4F                     270      TRAP    #15
+000011D4                           271      
+000011D4  4281                     272      CLR.L   D1
+000011D6  1205                     273      MOVE.B  D5, D1
+000011D8  4EB9 00001FF2            274      JSR     DisplayNum
+000011DE  103C 0006                275      MOVE.B  #6, D0
+000011E2  4E4F                     276      TRAP    #15
+000011E4                           277      
+000011E4  43F9 00002299            278      LEA     DAnplusN, A1     
+000011EA  103C 000E                279      MOVE.B  #14, D0
+000011EE  4E4F                     280      TRAP    #15 
+000011F0  4E75                     281      RTS
+000011F2                           282      
+000011F2                           283  * ---------------------------------------
+000011F2                           284  * EA Absolute addressing and immediate data, D5 stores register number   
+000011F2                           285  EA_AB_IM
+000011F2  0C05 0000                286      CMPI.B  #0, D5
+000011F6  6700 0014                287      BEQ     EA_AB_WORD
+000011FA  0C05 0001                288      CMPI.B  #1, D5
+000011FE  6700 0030                289      BEQ     EA_AB_LONG
+00001202  0C05 0004                290      CMPI.B  #4, D5
+00001206  6700 0046                291      BEQ     EA_IM
+0000120A  4E75                     292      RTS
+0000120C                           293      
+0000120C                           294  * ---------------------------------------
+0000120C                           295  * EA Absolute addressing WORD, clear D2 to DISPLAY next word data     
+0000120C                           296  EA_AB_WORD
+0000120C  43F9 000022A7            297      LEA     DAddress, A1     
+00001212  103C 000E                298      MOVE.B  #14, D0
+00001216  4E4F                     299      TRAP    #15
+00001218                           300      
+00001218  4282                     301      CLR.L   D2
+0000121A  341D                     302      MOVE.W  (A5)+,D2
+0000121C  4EB9 00001FF8            303      JSR     Display_FFFF
+00001222                           304      
+00001222  11FC 0004 0400           305      MOVE.B  #4, $400
+00001228  4EB9 00001E90            306      JSR Display_Address
+0000122E  4E75                     307      RTS
+00001230                           308      
+00001230                           309      
+00001230                           310  * ---------------------------------------
+00001230                           311  * EA Absolute addressing LONG, clear D5 to store next long data      
+00001230                           312  EA_AB_LONG
+00001230  43F9 000022A7            313      LEA     DAddress, A1     
+00001236  103C 000E                314      MOVE.B  #14, D0
+0000123A  4E4F                     315      TRAP    #15
+0000123C                           316      
+0000123C  4282                     317      CLR.L   D2
+0000123E  241D                     318      MOVE.L  (A5)+,D2
+00001240  11FC 0008 0400           319      MOVE.B  #8, $400
+00001246  4EB9 00001EBE            320      JSR Display_Address_L
+0000124C  4E75                     321      RTS
+0000124E                           322  
+0000124E                           323  * ---------------------------------------
+0000124E                           324  * EA Absolute addressing WORD, D5 stores register number     
+0000124E                           325  EA_IM
+0000124E  43F9 000022A9            326      LEA     DIM, A1     
+00001254  103C 000E                327      MOVE.B  #14, D0
+00001258  4E4F                     328      TRAP    #15
+0000125A                           329      
+0000125A  4EB9 00001262            330      JSR     IM_SIZE
+00001260  4E75                     331      RTS
+00001262                           332     
+00001262                           333  IM_SIZE
+00001262  0C06 0002                334      CMPI.B  #2, D6
+00001266  6700 0014                335      BEQ     IM_LONG
+0000126A                           336      
+0000126A  4282                     337      CLR.L   D2
+0000126C  341D                     338      MOVE.W  (A5)+,D2
+0000126E  11FC 0004 0400           339      MOVE.B  #4, $400
+00001274  4EB9 00001E90            340      JSR Display_Address
+0000127A                           341      
+0000127A  4E75                     342      RTS
+0000127C                           343  IM_LONG
+0000127C  4282                     344      CLR.L   D2
+0000127E  241D                     345      MOVE.L  (A5)+,D2
+00001280  11FC 0008 0400           346      MOVE.B  #8, $400
+00001286  4EB9 00001EBE            347      JSR Display_Address_L
+0000128C  4E75                     348      RTS    
+0000128E                           349  * ---------------------------------------
+0000128E                           350  * handle size, size must be stored in D6
+0000128E                           351  SIZE_HANDLE
+0000128E  0C06 0000                352      CMPI.B  #0, D6
+00001292  6700 0014                353      BEQ     BYTE_DISPLAY
+00001296  0C06 0001                354      CMPI.B  #1, D6
+0000129A  6700 001A                355      BEQ     WORD_DISPLAY    
+0000129E  0C06 0002                356      CMPI.B  #2, D6
+000012A2  6700 0020                357      BEQ     LONG_DISPLAY
+000012A6  4E75                     358      RTS
+000012A8                           359  * --------------------------------------
+000012A8                           360  * Display byte .B after instruction    
+000012A8                           361  BYTE_DISPLAY
+000012A8  43F9 000022AE            362      LEA     DByte, A1     
+000012AE  103C 000E                363      MOVE.B  #14, D0
+000012B2  4E4F                     364      TRAP    #15
+000012B4  4E75                     365      RTS
+000012B6                           366  
+000012B6                           367  * --------------------------------------
+000012B6                           368  * Display byte .W after instruction 
+000012B6                           369  WORD_DISPLAY
+000012B6  43F9 000022B1            370      LEA     DWord, A1     
+000012BC  103C 000E                371      MOVE.B  #14, D0
+000012C0  4E4F                     372      TRAP    #15
+000012C2  4E75                     373      RTS
+000012C4                           374     
+000012C4                           375  * --------------------------------------
+000012C4                           376  * Display byte .L after instruction 
+000012C4                           377  LONG_DISPLAY
+000012C4  43F9 000022B4            378      LEA     DLong, A1     
+000012CA  103C 000E                379      MOVE.B  #14, D0
+000012CE  4E4F                     380      TRAP    #15
+000012D0  4E75                     381      RTS
+000012D2                           382  
+000012D2                           383  * -------------------------------------
+000012D2                           384  * Start of decoding      Use D4 to mask
+000012D2                           385  DECODE
+000012D2  3803                     386      MOVE.W  D3, D4
+000012D4                           387      
+000012D4  0C43 4E75                388      CMPI.W  #$4E75, D3          * decode RTS
+000012D8  6700 017C                389      BEQ     DISPLAY_RTS
+000012DC                           390      
+000012DC  0C43 4E71                391      CMPI.W  #$4E71, D3          * decode NOP
+000012E0  6700 0182                392      BEQ     DISPLAY_NOP
+000012E4                           393  
+000012E4  0244 FFC0                394      ANDI.W  #$FFC0, D4          * decode JSR
+000012E8  0C44 4E80                395      CMPI.W  #$4E80, D4
+000012EC  6700 0184                396      BEQ     DISPLAY_JSR
+000012F0                           397      
+000012F0  3803                     398      MOVE.W  D3, D4
+000012F2  0244 FF00                399      ANDI.W  #$FF00, D4          * decode NEG
+000012F6  0C44 4400                400      CMPI.W  #$4400, D4
+000012FA  6700 01A6                401      BEQ     DISPLAY_NEG    
+000012FE                           402      
+000012FE  3803                     403      MOVE.W  D3, D4
+00001300  0244 FF00                404      ANDI.W  #$FF00, D4          * decode CLR
+00001304  0C44 4200                405      CMPI.W  #$4200, D4
+00001308  6700 024C                406      BEQ     DISPLAY_CLR    
+0000130C                           407    
+0000130C  3803                     408      MOVE.W  D3, D4
+0000130E  0244 F0C0                409      ANDI.W  #$F0C0, D4
+00001312  0C44 E0C0                410      CMPI.W  #$E0C0, D4
+00001316  6700 01C4                411      BEQ     DISPLAY_ROTATION_M    * decode ASL, ASR, LSL, LSR, ROL, ROR memory shift one bit, use D6 to store rotation type
+0000131A                           412      
+0000131A  3803                     413      MOVE.W  D3, D4
+0000131C  0244 F000                414      ANDI.W  #$F000, D4
+00001320  0C44 E000                415      CMPI.W  #$E000, D4
+00001324  6700 01EA                416      BEQ     DISPLAY_ROTATION_R    * decode ASL, ASR, LSL, LSR, ROL, ROR register shift, use D6 to store size type, D7 to store rotation type
+00001328                           417      
+00001328  3803                     418      MOVE.W  D3, D4
+0000132A  0244 F1C0                419      ANDI.W  #$F1C0, D4          * decode LEA
+0000132E  0C44 41C0                420      CMPI.W  #$41C0, D4
+00001332  6700 025C                421      BEQ     DISPLAY_LEA         
+00001336                           422      
+00001336  3803                     423      MOVE.W  D3, D4              * decode CMP
+00001338  0244 F000                424      ANDI.W  #$F000, D4
+0000133C  0C44 B000                425      CMPI.W  #$B000, D4
+00001340  6700 029A                426      BEQ     DISPLAY_CMP
+00001344                           427      
+00001344  3803                     428      MOVE.W  D3, D4              * decode MOVEQ
+00001346  0244 F000                429      ANDI.W  #$F000, D4
+0000134A  0C44 7000                430      CMPI.W  #$7000, D4
+0000134E  6700 02E2                431      BEQ     DISPLAY_MOVEQ
+00001352                           432      
+00001352  3803                     433      MOVE.W  D3, D4              * decode ADDQ
+00001354  0244 F000                434      ANDI.W  #$F000, D4
+00001358  0C44 5000                435      CMPI.W  #$5000, D4
+0000135C  6700 0326                436      BEQ     DISPLAY_ADDQ
+00001360                           437      
+00001360  3803                     438      MOVE.W  D3, D4              * decode ADDI
+00001362  0244 FF00                439      ANDI.W  #$FF00, D4
+00001366  0C44 0600                440      CMPI.W  #$0600, D4
+0000136A  6700 037E                441      BEQ     DISPLAY_ADDI
+0000136E                           442      
+0000136E  3803                     443      MOVE.W  D3, D4              * decode SUBI
+00001370  0244 FF00                444      ANDI.W  #$FF00, D4
+00001374  0C44 0400                445      CMPI.W  #$0400, D4
+00001378  6700 0478                446      BEQ     DISPLAY_SUBI
+0000137C                           447      
+0000137C  3803                     448      MOVE.W  D3, D4              * decode ANDI
+0000137E  0244 FF00                449      ANDI.W  #$FF00, D4
+00001382  0C44 0200                450      CMPI.W  #$0200, D4
+00001386  6700 03BA                451      BEQ     DISPLAY_ANDI
+0000138A                           452      
+0000138A  3803                     453      MOVE.W  D3, D4              * decode ORI
+0000138C  0244 FF00                454      ANDI.W  #$FF00, D4
+00001390  0C44 0000                455      CMPI.W  #$0000, D4
+00001394  6700 0404                456      BEQ     DISPLAY_ORI
+00001398                           457      
+00001398  3803                     458      MOVE.W  D3, D4              * decode ADDA
+0000139A  0244 F0C0                459      ANDI.W  #$F0C0, D4
+0000139E  0C44 D0C0                460      CMPI.W  #$D0C0, D4
+000013A2  6700 04A6                461      BEQ     DISPLAY_ADDA     
+000013A6                           462  
+000013A6  3803                     463      MOVE.W  D3, D4              * decode MOVEA
+000013A8  0244 F040                464      ANDI.W  #$F040, D4
+000013AC  0C44 3040                465      CMPI.W  #$3040, D4
+000013B0  6700 04F8                466      BEQ     DISPLAY_MOVEA    
+000013B4  0244 F040                467      ANDI.W  #$F040, D4
+000013B8  0C44 2040                468      CMPI.W  #$2040, D4
+000013BC  6700 04EC                469      BEQ     DISPLAY_MOVEA    
+000013C0                           470      
+000013C0  3803                     471      MOVE.W  D3, D4              * decode MULS/ MULU
+000013C2  0244 F0C0                472      ANDI.W  #$F0C0, D4
+000013C6  0C44 C0C0                473      CMPI.W  #$C0C0, D4
+000013CA  6700 0542                474      BEQ     DISPLAY_MUL
+000013CE                           475      
+000013CE  3803                     476      MOVE.W  D3, D4              * decode DIVU
+000013D0  0244 F0C0                477      ANDI.W  #$F0C0, D4
+000013D4  0C44 80C0                478      CMPI.W  #$80C0, D4
+000013D8  6700 0590                479      BEQ     DISPLAY_DIVU        
+000013DC                           480      
+000013DC  3803                     481      MOVE.W  D3, D4              * decode BXX
+000013DE  0244 F000                482      ANDI.W  #$F000, D4
+000013E2  0C44 6000                483      CMPI.W  #$6000, D4
+000013E6  6700 05CE                484      BEQ     DISPLAY_BXX  
+000013EA                           485      
+000013EA  3803                     486      MOVE.W  D3, D4              * decode MOVE
+000013EC  0244 F000                487      ANDI.W  #$F000, D4
+000013F0  0C44 1000                488      CMPI.W  #$1000, D4
+000013F4  6700 05E0                489      BEQ     DISPLAY_MOVE  
+000013F8  0C44 3000                490      CMPI.W  #$3000, D4
+000013FC  6700 05D8                491      BEQ     DISPLAY_MOVE 
+00001400  0C44 2000                492      CMPI.W  #$2000, D4
+00001404  6700 05D0                493      BEQ     DISPLAY_MOVE
+00001408                           494      
+00001408  3803                     495      MOVE.W  D3, D4              * decode AND
+0000140A  0244 F000                496      ANDI.W  #$F000, D4
+0000140E  0C44 C000                497      CMPI.W  #$C000, D4
+00001412  6700 0796                498      BEQ     DISPLAY_AND  
+00001416                           499      
+00001416  3803                     500      MOVE.W  D3, D4              * decode OR
+00001418  0244 F000                501      ANDI.W  #$F000, D4
+0000141C  0C44 8000                502      CMPI.W  #$8000, D4
+00001420  6700 07C0                503      BEQ     DISPLAY_OR
+00001424                           504  
+00001424  3803                     505      MOVE.W  D3, D4              * decode ADD
+00001426  0244 F000                506      ANDI.W  #$F000, D4
+0000142A  0C44 D000                507      CMPI.W  #$D000, D4
+0000142E  6700 07EA                508      BEQ     DISPLAY_ADD
+00001432                           509      
+00001432  3803                     510      MOVE.W  D3, D4              * decode SUB
+00001434  0244 F000                511      ANDI.W  #$F000, D4
+00001438  0C44 9000                512      CMPI.W  #$9000, D4
+0000143C  6700 0814                513      BEQ     DISPLAY_SUB
+00001440                           514      
+00001440                           515      
+00001440  3803                     516      MOVE.W  D3, D4              * decode MOVEM
+00001442  0244 FB80                517      ANDI.W  #$FB80, D4
+00001446  0C44 4880                518      CMPI.W  #$4880, D4
+0000144A  6700 060E                519      BEQ     DISPLAY_MOVEM
+0000144E                           520            
+0000144E                           521      
+0000144E                           522     
+0000144E  4EB9 00001E90            523      JSR Display_Address         * display data
+00001454  4E75                     524      RTS
+00001456                           525  
+00001456                           526  
+00001456                           527  
+00001456                           528  * -------------------------------------
+00001456                           529  * Display RTS
+00001456                           530  DISPLAY_RTS
+00001456  43F9 0000227E            531      LEA     DRTS, A1      
+0000145C  103C 000E                532      MOVE.B  #14, D0
+00001460  4E4F                     533      TRAP    #15
+00001462  4E75                     534      RTS
+00001464                           535  
+00001464                           536  * -------------------------------------
+00001464                           537  * Display NOP
+00001464                           538  DISPLAY_NOP
+00001464  43F9 00002282            539      LEA     DNOP, A1     
+0000146A  103C 000E                540      MOVE.B  #14, D0
+0000146E  4E4F                     541      TRAP    #15
+00001470  4E75                     542      RTS
+00001472                           543      
+00001472                           544  * ------------------------------------
+00001472                           545  * Display JSR and its EA mode 2) (An) 7) .W  7) .L 
+00001472                           546  DISPLAY_JSR
+00001472  43F9 00002286            547      LEA     DJSR, A1     
+00001478  103C 000E                548      MOVE.B  #14, D0
+0000147C  4E4F                     549      TRAP    #15
+0000147E                           550      
+0000147E  43F9 000020B1            551      LEA     space, A1      * space 
+00001484  103C 000E                552      MOVE.B  #14, D0
+00001488  4E4F                     553      TRAP    #15
+0000148A                           554      
+0000148A  4285                     555      CLR.L   D5                  * Clear register
+0000148C  4284                     556      CLR.L   D4
+0000148E                           557      
+0000148E  3803                     558      MOVE.W  D3, D4              * D4 to store EA mode
+00001490  3A03                     559      MOVE.W  D3, D5              * D5 to store EA register
+00001492                           560      
+00001492  E64C                     561      LSR.W   #3, D4              * rotate for EA mode
+00001494  0244 0007                562      ANDI.W  #$0007, D4          * mask last 3 bits
+00001498  0245 0007                563      ANDI.W  #$0007, D5          * mask last 3 bits
+0000149C                           564      
+0000149C  4EB8 1106                565      JSR     EA_HANDLE    
+000014A0  4E75                     566      RTS
+000014A2                           567      
+000014A2                           568  * -------------------------------------
+000014A2                           569  * Display NEG and its size and its EA mode 1) Dn 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L
+000014A2                           570  DISPLAY_NEG
+000014A2  43F9 0000228A            571      LEA     DNEG, A1
+000014A8  103C 000E                572      MOVE.B  #14, D0
+000014AC  4E4F                     573      TRAP    #15
+000014AE                           574      
+000014AE  4206                     575      CLR.B   D6
+000014B0  1C03                     576      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+000014B2  EC4E                     577      LSR.W   #6, D6              * no need to mask it is already a size
+000014B4                           578      
+000014B4  4EB8 128E                579      JSR     SIZE_HANDLE
+000014B8                           580      
+000014B8  43F9 000020B1            581      LEA     space, A1      * space 
+000014BE  103C 000E                582      MOVE.B  #14, D0
+000014C2  4E4F                     583      TRAP    #15
+000014C4                           584      
+000014C4  4285                     585      CLR.L   D5                  * Clear register
+000014C6  4284                     586      CLR.L   D4
+000014C8                           587      
+000014C8  3803                     588      MOVE.W  D3, D4              * D4 to store EA mode
+000014CA  3A03                     589      MOVE.W  D3, D5              * D5 to store EA register
+000014CC                           590      
+000014CC  E64C                     591      LSR.W   #3, D4              * rotate for EA mode
+000014CE  0244 0007                592      ANDI.W  #$0007, D4          * mask last 3 bits
+000014D2  0245 0007                593      ANDI.W  #$0007, D5          * mask last 3 bits
+000014D6                           594      
+000014D6  4EB8 1106                595      JSR     EA_HANDLE
+000014DA  4E75                     596      RTS
+000014DC                           597      
+000014DC                           598  * ---------------------------------------
+000014DC                           599  * Display rotation  (memory shift) mode base on its condition
+000014DC                           600  DISPLAY_ROTATION_M
+000014DC                           601  
+000014DC  4286                     602      CLR.L   D6              * rotation check
+000014DE  3C03                     603      MOVE.W  D3, D6
+000014E0  E04E                     604      LSR.W   #8, D6
+000014E2  0206 000F                605      ANDI.B  #$0F, D6  
+000014E6  4EB9 00001EE4            606      JSR     ROTATION_CHECK
+000014EC                           607      
+000014EC  43F9 000020B1            608      LEA     space, A1      * space 
+000014F2  103C 000E                609      MOVE.B  #14, D0
+000014F6  4E4F                     610      TRAP    #15
+000014F8                           611      
+000014F8  4285                     612      CLR.L   D5                  * Clear register
+000014FA  4284                     613      CLR.L   D4
+000014FC                           614      
+000014FC  3803                     615      MOVE.W  D3, D4              * D4 to store EA mode
+000014FE  3A03                     616      MOVE.W  D3, D5              * D5 to store EA register
+00001500                           617      
+00001500  E64C                     618      LSR.W   #3, D4              * rotate for EA mode
+00001502  0244 0007                619      ANDI.W  #$0007, D4          * mask last 3 bits
+00001506  0245 0007                620      ANDI.W  #$0007, D5          * mask last 3 bits
+0000150A                           621      
+0000150A  4EB8 1106                622      JSR     EA_HANDLE
+0000150E  4E75                     623      RTS
+00001510                           624      
+00001510                           625  * ---------------------------------------
+00001510                           626  * Display rotation  (register shift) mode base on its condition
+00001510                           627  DISPLAY_ROTATION_R
+00001510  4286                     628      CLR.L   D6              * rotation check
+00001512  3C03                     629      MOVE.W  D3, D6
+00001514  3E06                     630      MOVE.W  D6, D7
+00001516  E05F                     631      ROR.W   #8, D7
+00001518  0247 0001                632      ANDI.W  #$0001, D7
+0000151C                           633  
+0000151C  E45E                     634      ROR.W   #2, D6
+0000151E  0246 0006                635      ANDI.W  #$0006, D6
+00001522  DC07                     636      ADD.B   D7, D6
+00001524  4EB9 00001EE4            637      JSR     ROTATION_CHECK
+0000152A                           638      
+0000152A  4286                     639      CLR.L   D6
+0000152C  1C03                     640      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+0000152E  EC4E                     641      LSR.W   #6, D6              
+00001530  4EB8 128E                642      JSR     SIZE_HANDLE
+00001534                           643      
+00001534  43F9 000020B1            644      LEA     space, A1      * space 
+0000153A  103C 000E                645      MOVE.B  #14, D0
+0000153E  4E4F                     646      TRAP    #15
+00001540                           647      
+00001540  4EB9 00001F16            648      JSR     IORR
+00001546                           649      
+00001546                           650      
+00001546  4285                     651      CLR.L   D5                  * Clear register
+00001548  4284                     652      CLR.L   D4                  * mode set to 000, register shift only works for register
+0000154A                           653  
+0000154A  3A03                     654      MOVE.W  D3, D5              * D5 to store EA register
+0000154C                           655      
+0000154C  0245 0007                656      ANDI.W  #$0007, D5          * mask last 3 bits
+00001550                           657      
+00001550  4EB8 1106                658      JSR     EA_HANDLE
+00001554  4E75                     659      RTS
+00001556                           660  * -------------------------------------
+00001556                           661  * Display CLR and its size and its EA mode 1) Dn 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L   
+00001556                           662  DISPLAY_CLR
+00001556  43F9 0000228E            663      LEA     DCLR, A1
+0000155C  103C 000E                664      MOVE.B  #14, D0
+00001560  4E4F                     665      TRAP    #15
+00001562                           666      
+00001562  4206                     667      CLR.B   D6
+00001564  1C03                     668      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+00001566  EC4E                     669      LSR.W   #6, D6              * no need to mask it is already a size
+00001568                           670      
+00001568  4EB8 128E                671      JSR     SIZE_HANDLE
+0000156C                           672      
+0000156C  43F9 000020B1            673      LEA     space, A1      * space 
+00001572  103C 000E                674      MOVE.B  #14, D0
+00001576  4E4F                     675      TRAP    #15
+00001578                           676      
+00001578  4285                     677      CLR.L   D5                  * Clear register
+0000157A  4284                     678      CLR.L   D4
+0000157C                           679      
+0000157C  3803                     680      MOVE.W  D3, D4              * D4 to store EA mode
+0000157E  3A03                     681      MOVE.W  D3, D5              * D5 to store EA register
+00001580                           682      
+00001580  E64C                     683      LSR.W   #3, D4              * rotate for EA mode
+00001582  0244 0007                684      ANDI.W  #$0007, D4          * mask last 3 bits
+00001586  0245 0007                685      ANDI.W  #$0007, D5          * mask last 3 bits
+0000158A                           686      
+0000158A  4EB8 1106                687      JSR     EA_HANDLE
+0000158E  4E75                     688      RTS
+00001590                           689  * ---------------------------------------
+00001590                           690  * Display LEA and its EA mode   2) (An) 7) .W .L
+00001590                           691  DISPLAY_LEA
+00001590  43F9 000022CF            692      LEA     DLEA, A1
+00001596  103C 000E                693      MOVE.B  #14, D0
+0000159A  4E4F                     694      TRAP    #15
+0000159C                           695      
+0000159C  43F9 000020B1            696      LEA     space, A1      * space 
+000015A2  103C 000E                697      MOVE.B  #14, D0
+000015A6  4E4F                     698      TRAP    #15
+000015A8                           699      
+000015A8  4285                     700      CLR.L   D5                  * Clear register
+000015AA  4284                     701      CLR.L   D4
+000015AC                           702      
+000015AC  3803                     703      MOVE.W  D3, D4              * D4 to store EA mode
+000015AE  3A03                     704      MOVE.W  D3, D5              * D5 to store EA register
+000015B0                           705      
+000015B0  E64C                     706      LSR.W   #3, D4              * rotate for EA mode
+000015B2  0244 0007                707      ANDI.W  #$0007, D4          * mask last 3 bits
+000015B6  0245 0007                708      ANDI.W  #$0007, D5          * mask last 3 bits
+000015BA                           709      
+000015BA  4EB8 1106                710      JSR     EA_HANDLE
+000015BE                           711      
+000015BE  43F9 000022AC            712      LEA     DComma, A1     
+000015C4  103C 000E                713      MOVE.B  #14, D0
+000015C8  4E4F                     714      TRAP    #15
+000015CA                           715      
+000015CA  383C 0001                716      MOVE.W  #1, D4
+000015CE  3A03                     717      MOVE.W  D3, D5              * D5 to store EA register
+000015D0  EF5D                     718      ROL.W   #7, D5
+000015D2  0245 0007                719      ANDI.W  #$0007, D5          * mask last 3 bits
+000015D6  4EB8 1106                720      JSR     EA_HANDLE
+000015DA  4E75                     721      RTS
+000015DC                           722  
+000015DC                           723  * -----------------------------------
+000015DC                           724  * Display CMP and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L 7) immediate 
+000015DC                           725  DISPLAY_CMP   
+000015DC  43F9 000022D3            726      LEA     DCMP, A1
+000015E2  103C 000E                727      MOVE.B  #14, D0
+000015E6  4E4F                     728      TRAP    #15
+000015E8                           729      
+000015E8  4206                     730      CLR.B   D6
+000015EA  1C03                     731      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+000015EC  EC4E                     732      LSR.W   #6, D6              * no need to mask it is already a size
+000015EE                           733      
+000015EE  4EB8 128E                734      JSR     SIZE_HANDLE
+000015F2                           735      
+000015F2  43F9 000020B1            736      LEA     space, A1      * space 
+000015F8  103C 000E                737      MOVE.B  #14, D0
+000015FC  4E4F                     738      TRAP    #15
+000015FE                           739      
+000015FE  4285                     740      CLR.L   D5                  * Clear register
+00001600  4284                     741      CLR.L   D4
+00001602                           742      
+00001602  3803                     743      MOVE.W  D3, D4              * D4 to store EA mode
+00001604  3A03                     744      MOVE.W  D3, D5              * D5 to store EA register
+00001606                           745      
+00001606  E64C                     746      LSR.W   #3, D4              * rotate for EA mode
+00001608  0244 0007                747      ANDI.W  #$0007, D4          * mask last 3 bits
+0000160C  0245 0007                748      ANDI.W  #$0007, D5          * mask last 3 bits
+00001610                           749      
+00001610  4EB8 1106                750      JSR     EA_HANDLE
+00001614                           751      
+00001614  43F9 000022AC            752      LEA     DComma, A1     
+0000161A  103C 000E                753      MOVE.B  #14, D0
+0000161E  4E4F                     754      TRAP    #15
+00001620                           755      
+00001620  383C 0000                756      MOVE.W  #0, D4
+00001624  3A03                     757      MOVE.W  D3, D5              * D5 to store EA register
+00001626  EF5D                     758      ROL.W   #7, D5
+00001628  0245 0007                759      ANDI.W  #$0007, D5          * mask last 3 bits
+0000162C  4EB8 1106                760      JSR     EA_HANDLE   
+00001630  4E75                     761      RTS
+00001632                           762      
+00001632                           763  * -----------------------------------
+00001632                           764  * Display MOVEQ    
+00001632                           765  DISPLAY_MOVEQ
+00001632  43F9 000022D7            766      LEA     DMOVEQ, A1
+00001638  103C 000E                767      MOVE.B  #14, D0
+0000163C  4E4F                     768      TRAP    #15
+0000163E                           769      
+0000163E  43F9 000020B1            770      LEA     space, A1      * space 
+00001644  103C 000E                771      MOVE.B  #14, D0
+00001648  4E4F                     772      TRAP    #15
+0000164A                           773      
+0000164A  43F9 000022A9            774      LEA     DIM, A1        
+00001650  103C 000E                775      MOVE.B  #14, D0
+00001654  4E4F                     776      TRAP    #15
+00001656                           777      
+00001656  4282                     778      CLR.L   D2              * 8 bit number
+00001658  1403                     779      MOVE.B  D3, D2          * Move last 8 bits to display
+0000165A  11FC 0004 0400           780      MOVE.B  #4, $400
+00001660  4EB9 00001E90            781      JSR Display_Address
+00001666                           782      
+00001666  43F9 000022AC            783      LEA     DComma, A1      * comma
+0000166C  103C 000E                784      MOVE.B  #14, D0
+00001670  4E4F                     785      TRAP    #15
+00001672                           786      
+00001672  383C 0000                787      MOVE.W  #0, D4
+00001676  3A03                     788      MOVE.W  D3, D5              * D5 to store EA register
+00001678  EF5D                     789      ROL.W   #7, D5
+0000167A  0245 0007                790      ANDI.W  #$0007, D5          * mask last 3 bits
+0000167E  4EB8 1106                791      JSR     EA_HANDLE   
+00001682                           792      
+00001682  4E75                     793      RTS   
+00001684                           794      
+00001684                           795  * -----------------------------------
+00001684                           796  * Display ADDQ and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .L 7) .W
+00001684                           797  DISPLAY_ADDQ
+00001684  43F9 000022DD            798      LEA     DADDQ, A1
+0000168A  103C 000E                799      MOVE.B  #14, D0
+0000168E  4E4F                     800      TRAP    #15
+00001690                           801      
+00001690  43F9 000020B1            802      LEA     space, A1      * space 
+00001696  103C 000E                803      MOVE.B  #14, D0
+0000169A  4E4F                     804      TRAP    #15
+0000169C                           805      
+0000169C  43F9 000022A9            806      LEA     DIM, A1        
+000016A2  103C 000E                807      MOVE.B  #14, D0
+000016A6  4E4F                     808      TRAP    #15
+000016A8                           809      
+000016A8  4282                     810      CLR.L   D2              * 8 bit number
+000016AA  EF5A                     811      ROL.W   #7, D2
+000016AC  0242 0007                812      ANDI.W  #$0007, D2          * mask last 3 bits
+000016B0  0C02 0000                813      CMPI.B  #0, D2
+000016B4  4EB9 00001D8E            814      JSR     ZERO2EIGHT
+000016BA  11FC 0004 0400           815      MOVE.B  #4, $400
+000016C0  4EB9 00001E90            816      JSR Display_Address
+000016C6                           817      
+000016C6  43F9 000022AC            818      LEA     DComma, A1      * comma
+000016CC  103C 000E                819      MOVE.B  #14, D0
+000016D0  4E4F                     820      TRAP    #15
+000016D2                           821      
+000016D2  4285                     822      CLR.L   D5                  * Clear register
+000016D4  4284                     823      CLR.L   D4
+000016D6                           824      
+000016D6  3803                     825      MOVE.W  D3, D4              * D4 to store EA mode
+000016D8  3A03                     826      MOVE.W  D3, D5              * D5 to store EA register
+000016DA                           827      
+000016DA  E64C                     828      LSR.W   #3, D4              * rotate for EA mode
+000016DC  0244 0007                829      ANDI.W  #$0007, D4          * mask last 3 bits
+000016E0  0245 0007                830      ANDI.W  #$0007, D5          * mask last 3 bits
+000016E4  4EB8 1106                831      JSR     EA_HANDLE
+000016E8                           832      
+000016E8  4E75                     833      RTS   
+000016EA                           834      
+000016EA                           835  * -----------------------------------
+000016EA                           836  * Display ADDI and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L      7) IMMEDIATE
+000016EA                           837  DISPLAY_ADDI
+000016EA  43F9 000022E2            838      LEA     DADDI, A1
+000016F0  103C 000E                839      MOVE.B  #14, D0
+000016F4  4E4F                     840      TRAP    #15
+000016F6                           841      
+000016F6  4206                     842      CLR.B   D6
+000016F8  1C03                     843      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+000016FA  EC4E                     844      LSR.W   #6, D6              * no need to mask it is already a size
+000016FC                           845      
+000016FC  4EB8 128E                846      JSR     SIZE_HANDLE
+00001700                           847      
+00001700  43F9 000020B1            848      LEA     space, A1      * space 
+00001706  103C 000E                849      MOVE.B  #14, D0
+0000170A  4E4F                     850      TRAP    #15
+0000170C                           851      
+0000170C  43F9 000022A9            852      LEA     DIM, A1        
+00001712  103C 000E                853      MOVE.B  #14, D0
+00001716  4E4F                     854      TRAP    #15
+00001718                           855      
+00001718  4EB9 00002020            856      JSR     LONG_CHECK
+0000171E                           857      
+0000171E  43F9 000022AC            858      LEA     DComma, A1      * comma
+00001724  103C 000E                859      MOVE.B  #14, D0
+00001728  4E4F                     860      TRAP    #15
+0000172A                           861      
+0000172A  4285                     862      CLR.L   D5                  * Clear register
+0000172C  4284                     863      CLR.L   D4
+0000172E                           864      
+0000172E  3803                     865      MOVE.W  D3, D4              * D4 to store EA mode
+00001730  3A03                     866      MOVE.W  D3, D5              * D5 to store EA register
+00001732                           867      
+00001732  E64C                     868      LSR.W   #3, D4              * rotate for EA mode
+00001734  0244 0007                869      ANDI.W  #$0007, D4          * mask last 3 bits
+00001738  0245 0007                870      ANDI.W  #$0007, D5          * mask last 3 bits
+0000173C  4EB8 1106                871      JSR     EA_HANDLE
+00001740                           872      
+00001740  4E75                     873      RTS   
+00001742                           874  
+00001742                           875  * -----------------------------------
+00001742                           876  * Display ANDI and its size and its EA mode 1) Dn 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L   
+00001742                           877  DISPLAY_ANDI
+00001742  43F9 00002317            878      LEA     DAND, A1
+00001748  103C 000E                879      MOVE.B  #14, D0
+0000174C  4E4F                     880      TRAP    #15
+0000174E                           881      
+0000174E  4206                     882      CLR.B   D6
+00001750  1C03                     883      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+00001752  EC4E                     884      LSR.W   #6, D6              * no need to mask it is already a size
+00001754                           885      
+00001754  4EB8 128E                886      JSR     SIZE_HANDLE
+00001758                           887      
+00001758  43F9 000020B1            888      LEA     space, A1      * space 
+0000175E  103C 000E                889      MOVE.B  #14, D0
+00001762  4E4F                     890      TRAP    #15
+00001764                           891      
+00001764  43F9 000022A9            892      LEA     DIM, A1        
+0000176A  103C 000E                893      MOVE.B  #14, D0
+0000176E  4E4F                     894      TRAP    #15
+00001770                           895      
+00001770  4EB9 00002020            896      JSR     LONG_CHECK
+00001776                           897      
+00001776  43F9 000022AC            898      LEA     DComma, A1      * comma
+0000177C  103C 000E                899      MOVE.B  #14, D0
+00001780  4E4F                     900      TRAP    #15
+00001782                           901      
+00001782  4285                     902      CLR.L   D5                  * Clear register
+00001784  4284                     903      CLR.L   D4
+00001786                           904      
+00001786  3803                     905      MOVE.W  D3, D4              * D4 to store EA mode
+00001788  3A03                     906      MOVE.W  D3, D5              * D5 to store EA register
+0000178A                           907      
+0000178A  E64C                     908      LSR.W   #3, D4              * rotate for EA mode
+0000178C  0244 0007                909      ANDI.W  #$0007, D4          * mask last 3 bits
+00001790  0245 0007                910      ANDI.W  #$0007, D5          * mask last 3 bits
+00001794  4EB8 1106                911      JSR     EA_HANDLE
+00001798                           912      
+00001798  4E75                     913      RTS   
+0000179A                           914      
+0000179A                           915  * -----------------------------------
+0000179A                           916  * Display ORI and its size and its EA mode 1) Dn 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L   
+0000179A                           917  DISPLAY_ORI
+0000179A  43F9 0000231B            918      LEA     DOR, A1
+000017A0  103C 000E                919      MOVE.B  #14, D0
+000017A4  4E4F                     920      TRAP    #15
+000017A6                           921      
+000017A6  4206                     922      CLR.B   D6
+000017A8  1C03                     923      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+000017AA  EC4E                     924      LSR.W   #6, D6              * no need to mask it is already a size
+000017AC                           925      
+000017AC  4EB8 128E                926      JSR     SIZE_HANDLE
+000017B0                           927      
+000017B0  43F9 000020B1            928      LEA     space, A1      * space 
+000017B6  103C 000E                929      MOVE.B  #14, D0
+000017BA  4E4F                     930      TRAP    #15
+000017BC                           931      
+000017BC  43F9 000022A9            932      LEA     DIM, A1        
+000017C2  103C 000E                933      MOVE.B  #14, D0
+000017C6  4E4F                     934      TRAP    #15
+000017C8                           935      
+000017C8  4EB9 00002020            936      JSR     LONG_CHECK
+000017CE                           937      
+000017CE  43F9 000022AC            938      LEA     DComma, A1      * comma
+000017D4  103C 000E                939      MOVE.B  #14, D0
+000017D8  4E4F                     940      TRAP    #15
+000017DA                           941      
+000017DA  4285                     942      CLR.L   D5                  * Clear register
+000017DC  4284                     943      CLR.L   D4
+000017DE                           944      
+000017DE  3803                     945      MOVE.W  D3, D4              * D4 to store EA mode
+000017E0  3A03                     946      MOVE.W  D3, D5              * D5 to store EA register
+000017E2                           947      
+000017E2  E64C                     948      LSR.W   #3, D4              * rotate for EA mode
+000017E4  0244 0007                949      ANDI.W  #$0007, D4          * mask last 3 bits
+000017E8  0245 0007                950      ANDI.W  #$0007, D5          * mask last 3 bits
+000017EC  4EB8 1106                951      JSR     EA_HANDLE
+000017F0                           952      
+000017F0  4E75                     953      RTS   
+000017F2                           954  
+000017F2                           955  
+000017F2                           956  * -----------------------------------
+000017F2                           957  * Display SUBI and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L      7) IMMEDIATE
+000017F2                           958  DISPLAY_SUBI
+000017F2  43F9 000022E7            959      LEA     DSUBI, A1
+000017F8  103C 000E                960      MOVE.B  #14, D0
+000017FC  4E4F                     961      TRAP    #15
+000017FE                           962      
+000017FE  4206                     963      CLR.B   D6
+00001800  1C03                     964      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L
+00001802  EC4E                     965      LSR.W   #6, D6              * no need to mask it is already a size
+00001804                           966      
+00001804  4EB8 128E                967      JSR     SIZE_HANDLE
+00001808                           968      
+00001808  43F9 000020B1            969      LEA     space, A1      * space 
+0000180E  103C 000E                970      MOVE.B  #14, D0
+00001812  4E4F                     971      TRAP    #15
+00001814                           972      
+00001814  43F9 000022A9            973      LEA     DIM, A1        
+0000181A  103C 000E                974      MOVE.B  #14, D0
+0000181E  4E4F                     975      TRAP    #15
+00001820                           976      
+00001820  4EB9 00002020            977      JSR     LONG_CHECK
+00001826                           978      
+00001826  43F9 000022AC            979      LEA     DComma, A1      * comma
+0000182C  103C 000E                980      MOVE.B  #14, D0
+00001830  4E4F                     981      TRAP    #15
+00001832                           982      
+00001832  4285                     983      CLR.L   D5                  * Clear register
+00001834  4284                     984      CLR.L   D4
+00001836                           985      
+00001836  3803                     986      MOVE.W  D3, D4              * D4 to store EA mode
+00001838  3A03                     987      MOVE.W  D3, D5              * D5 to store EA register
+0000183A                           988      
+0000183A  E64C                     989      LSR.W   #3, D4              * rotate for EA mode
+0000183C  0244 0007                990      ANDI.W  #$0007, D4          * mask last 3 bits
+00001840  0245 0007                991      ANDI.W  #$0007, D5          * mask last 3 bits
+00001844  4EB8 1106                992      JSR     EA_HANDLE
+00001848                           993      
+00001848  4E75                     994      RTS   
+0000184A                           995  
+0000184A                           996  * -----------------------------------
+0000184A                           997  * Display ADDA and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate  
+0000184A                           998  DISPLAY_ADDA
+0000184A  43F9 000022EC            999      LEA     DADDA, A1
+00001850  103C 000E               1000      MOVE.B  #14, D0
+00001854  4E4F                    1001      TRAP    #15
+00001856                          1002      
+00001856  4206                    1003      CLR.B   D6
+00001858  3C03                    1004      MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L
+0000185A  E04E                    1005      LSR.W   #8, D6              * no need to mask it is already a size
+0000185C  0246 0001               1006      ANDI.W  #1, D6
+00001860  5206                    1007      ADDQ.B  #1, D6
+00001862                          1008      
+00001862  4EB8 128E               1009      JSR     SIZE_HANDLE
+00001866                          1010      
+00001866  43F9 000020B1           1011      LEA     space, A1      * space 
+0000186C  103C 000E               1012      MOVE.B  #14, D0
+00001870  4E4F                    1013      TRAP    #15
+00001872                          1014      
+00001872  4285                    1015      CLR.L   D5                  * Clear register
+00001874  4284                    1016      CLR.L   D4
+00001876                          1017      
+00001876  3803                    1018      MOVE.W  D3, D4              * D4 to store EA mode
+00001878  3A03                    1019      MOVE.W  D3, D5              * D5 to store EA register
+0000187A                          1020      
+0000187A  E64C                    1021      LSR.W   #3, D4              * rotate for EA mode
+0000187C  0244 0007               1022      ANDI.W  #$0007, D4          * mask last 3 bits
+00001880  0245 0007               1023      ANDI.W  #$0007, D5          * mask last 3 bits
+00001884  4EB8 1106               1024      JSR     EA_HANDLE
+00001888                          1025      
+00001888  43F9 000022AC           1026      LEA     DComma, A1      * comma
+0000188E  103C 000E               1027      MOVE.B  #14, D0
+00001892  4E4F                    1028      TRAP    #15
+00001894                          1029      
+00001894  4285                    1030      CLR.L   D5                  * Clear register
+00001896  4284                    1031      CLR.L   D4
+00001898                          1032      
+00001898  383C 0001               1033      MOVE.W  #1, D4              * D4 to store EA mode
+0000189C  3A03                    1034      MOVE.W  D3, D5              * D5 to store EA register    
+0000189E  EF5D                    1035      ROL.W   #7, D5              * rotate for EA mode
+000018A0  0245 0007               1036      ANDI.W  #$0007, D5          * mask last 3 bits
+000018A4  4EB8 1106               1037      JSR     EA_HANDLE
+000018A8                          1038      
+000018A8  4E75                    1039      RTS   
+000018AA                          1040  
+000018AA                          1041  * -----------------------------------
+000018AA                          1042  * Display MOVEA and its size and its EA mode 1) Dn 2) An 3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate  
+000018AA                          1043  DISPLAY_MOVEA
+000018AA  43F9 000022F1           1044      LEA     DMOVEA, A1
+000018B0  103C 000E               1045      MOVE.B  #14, D0
+000018B4  4E4F                    1046      TRAP    #15
+000018B6                          1047      
+000018B6  4206                    1048      CLR.B   D6
+000018B8  3C03                    1049      MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L
+000018BA  E95E                    1050      ROL.W   #4, D6              * no need to mask it is already a size
+000018BC  0246 0003               1051      ANDI.W  #3, D6   
+000018C0  4EB9 00002012           1052      JSR     MOVE_SIZE
+000018C6  4EB8 128E               1053      JSR     SIZE_HANDLE
+000018CA                          1054      
+000018CA  43F9 000020B1           1055      LEA     space, A1      * space 
+000018D0  103C 000E               1056      MOVE.B  #14, D0
+000018D4  4E4F                    1057      TRAP    #15
+000018D6                          1058      
+000018D6  4285                    1059      CLR.L   D5                  * Clear register
+000018D8  4284                    1060      CLR.L   D4
+000018DA                          1061      
+000018DA  3803                    1062      MOVE.W  D3, D4              * D4 to store EA mode
+000018DC  3A03                    1063      MOVE.W  D3, D5              * D5 to store EA register
+000018DE                          1064      
+000018DE  E64C                    1065      LSR.W   #3, D4              * rotate for EA mode
+000018E0  0244 0007               1066      ANDI.W  #$0007, D4          * mask last 3 bits
+000018E4  0245 0007               1067      ANDI.W  #$0007, D5          * mask last 3 bits
+000018E8  4EB8 1106               1068      JSR     EA_HANDLE
+000018EC                          1069      
+000018EC  43F9 000022AC           1070      LEA     DComma, A1      * comma
+000018F2  103C 000E               1071      MOVE.B  #14, D0
+000018F6  4E4F                    1072      TRAP    #15
+000018F8                          1073      
+000018F8  4285                    1074      CLR.L   D5                  * Clear register
+000018FA  4284                    1075      CLR.L   D4
+000018FC                          1076      
+000018FC  383C 0001               1077      MOVE.W  #1, D4              * D4 to store EA mode
+00001900  3A03                    1078      MOVE.W  D3, D5              * D5 to store EA register    
+00001902  EF5D                    1079      ROL.W   #7, D5              * rotate for EA mode
+00001904  0245 0007               1080      ANDI.W  #$0007, D5          * mask last 3 bits
+00001908  4EB8 1106               1081      JSR     EA_HANDLE
+0000190C                          1082      
+0000190C  4E75                    1083      RTS  
+0000190E                          1084  
+0000190E                          1085  * -----------------------------------
+0000190E                          1086  * Display MUL and modes (MULS OR MULU) and its EA mode 1) Dn  3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate 
+0000190E                          1087  DISPLAY_MUL
+0000190E  43F9 00002328           1088      LEA     DMUL, A1
+00001914  103C 000E               1089      MOVE.B  #14, D0
+00001918  4E4F                    1090      TRAP    #15
+0000191A                          1091      
+0000191A  4206                    1092      CLR.B   D6
+0000191C  3C03                    1093      MOVE.W  D3, D6              * D6 to store MODE   MULS = 7 MULU = 3
+0000191E  EC4E                    1094      LSR.W   #6, D6              
+00001920  0246 0007               1095      ANDI.W  #7, D6
+00001924                          1096      
+00001924  4EB9 00002048           1097      JSR     S_U_HANDLE
+0000192A                          1098      
+0000192A  43F9 000020B1           1099      LEA     space, A1      * space 
+00001930  103C 000E               1100      MOVE.B  #14, D0
+00001934  4E4F                    1101      TRAP    #15
+00001936                          1102      
+00001936  4285                    1103      CLR.L   D5                  * Clear register
+00001938  4284                    1104      CLR.L   D4
+0000193A                          1105      
+0000193A  3803                    1106      MOVE.W  D3, D4              * D4 to store EA mode
+0000193C  3A03                    1107      MOVE.W  D3, D5              * D5 to store EA register
+0000193E                          1108      
+0000193E  E64C                    1109      LSR.W   #3, D4              * rotate for EA mode
+00001940  0244 0007               1110      ANDI.W  #$0007, D4          * mask last 3 bits
+00001944  0245 0007               1111      ANDI.W  #$0007, D5          * mask last 3 bits
+00001948                          1112      
+00001948  4EB8 1106               1113      JSR     EA_HANDLE
+0000194C                          1114      
+0000194C  43F9 000022AC           1115      LEA     DComma, A1     
+00001952  103C 000E               1116      MOVE.B  #14, D0
+00001956  4E4F                    1117      TRAP    #15
+00001958                          1118      
+00001958  383C 0000               1119      MOVE.W  #0, D4
+0000195C  3A03                    1120      MOVE.W  D3, D5              * D5 to store EA register
+0000195E  EF5D                    1121      ROL.W   #7, D5
+00001960  0245 0007               1122      ANDI.W  #$0007, D5          * mask last 3 bits
+00001964  4EB8 1106               1123      JSR     EA_HANDLE   
+00001968  4E75                    1124      RTS
+0000196A                          1125      
+0000196A                          1126  * -----------------------------------
+0000196A                          1127  * Display DIVU and its EA mode 1) Dn  3) (An) 4) (An)+ 5) -(An) 7) .W 7) .L    7) immediate 
+0000196A                          1128  DISPLAY_DIVU
+0000196A  43F9 000022F7           1129      LEA     DDIVU, A1
+00001970  103C 000E               1130      MOVE.B  #14, D0
+00001974  4E4F                    1131      TRAP    #15
+00001976                          1132      
+00001976  43F9 000020B1           1133      LEA     space, A1      * space 
+0000197C  103C 000E               1134      MOVE.B  #14, D0
+00001980  4E4F                    1135      TRAP    #15
+00001982                          1136      
+00001982  4285                    1137      CLR.L   D5                  * Clear register
+00001984  4284                    1138      CLR.L   D4
+00001986                          1139      
+00001986  3803                    1140      MOVE.W  D3, D4              * D4 to store EA mode
+00001988  3A03                    1141      MOVE.W  D3, D5              * D5 to store EA register
+0000198A                          1142      
+0000198A  E64C                    1143      LSR.W   #3, D4              * rotate for EA mode
+0000198C  0244 0007               1144      ANDI.W  #$0007, D4          * mask last 3 bits
+00001990  0245 0007               1145      ANDI.W  #$0007, D5          * mask last 3 bits
+00001994                          1146      
+00001994  4EB8 1106               1147      JSR     EA_HANDLE
+00001998                          1148      
+00001998  43F9 000022AC           1149      LEA     DComma, A1     
+0000199E  103C 000E               1150      MOVE.B  #14, D0
+000019A2  4E4F                    1151      TRAP    #15
+000019A4                          1152      
+000019A4  383C 0000               1153      MOVE.W  #0, D4
+000019A8  3A03                    1154      MOVE.W  D3, D5              * D5 to store EA register
+000019AA  EF5D                    1155      ROL.W   #7, D5
+000019AC  0245 0007               1156      ANDI.W  #$0007, D5          * mask last 3 bits
+000019B0  4EB8 1106               1157      JSR     EA_HANDLE   
+000019B4  4E75                    1158      RTS
+000019B6                          1159  * -----------------------------------------
+000019B6                          1160  * Display branch condition and the displacement
+000019B6                          1161  DISPLAY_BXX
+000019B6  3803                    1162      MOVE.W  D3, D4
+000019B8  0244 0F00               1163      ANDI.W  #$0F00, D4
+000019BC  4EB9 00001D02           1164      JSR     BXX_CONDITION
+000019C2                          1165      
+000019C2  43F9 000020B1           1166      LEA     space, A1      * space 
+000019C8  103C 000E               1167      MOVE.B  #14, D0
+000019CC  4E4F                    1168      TRAP    #15
+000019CE                          1169      
+000019CE  4EB9 00001D52           1170      JSR     DISPLACEMENT_HANDLE
+000019D4                          1171      
+000019D4  4E75                    1172      RTS
+000019D6                          1173  * -------------------------------------------
+000019D6                          1174  * Display MOVE instruction and source and destination EA mode
+000019D6                          1175  DISPLAY_MOVE
+000019D6  43F9 0000230C           1176      LEA     DMOVE, A1
+000019DC  103C 000E               1177      MOVE.B  #14, D0
+000019E0  4E4F                    1178      TRAP    #15
+000019E2                          1179      
+000019E2  4206                    1180      CLR.B   D6
+000019E4  3C03                    1181      MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L       01 11 10
+000019E6  E04E                    1182      LSR.W   #8, D6              * shift size right
+000019E8  E84E                    1183      LSR.W   #4, D6              * shift again
+000019EA  4EB9 00001A3C           1184      JSR     MOVE_SIZEE
+000019F0  4EB8 128E               1185      JSR     SIZE_HANDLE
+000019F4                          1186      
+000019F4  43F9 000020B1           1187      LEA     space, A1      * space 
+000019FA  103C 000E               1188      MOVE.B  #14, D0
+000019FE  4E4F                    1189      TRAP    #15
+00001A00                          1190      
+00001A00  4285                    1191      CLR.L   D5                  * Clear register
+00001A02  4284                    1192      CLR.L   D4
+00001A04                          1193      
+00001A04  3803                    1194      MOVE.W  D3, D4              * D4 to store EA mode
+00001A06  3A03                    1195      MOVE.W  D3, D5              * D5 to store EA register
+00001A08                          1196      
+00001A08  E64C                    1197      LSR.W   #3, D4              * rotate for EA mode
+00001A0A  0244 0007               1198      ANDI.W  #$0007, D4          * mask last 3 bits
+00001A0E  0245 0007               1199      ANDI.W  #$0007, D5          * mask last 3 bits
+00001A12  4EB8 1106               1200      JSR     EA_HANDLE
+00001A16                          1201      
+00001A16  43F9 000022AC           1202      LEA     DComma, A1      * comma
+00001A1C  103C 000E               1203      MOVE.B  #14, D0
+00001A20  4E4F                    1204      TRAP    #15
+00001A22                          1205      
+00001A22  4285                    1206      CLR.L   D5                  * Clear register
+00001A24  4284                    1207      CLR.L   D4
+00001A26                          1208      
+00001A26  3803                    1209      MOVE.W  D3, D4              * D4 to store EA mode
+00001A28  3A03                    1210      MOVE.W  D3, D5              * D5 to store EA register    
+00001A2A  EC5C                    1211      ROR.W   #6, D4              * rotate for EA mode
+00001A2C  0244 0007               1212      ANDI.W  #$0007, D4          * mask last 3 bits
+00001A30                          1213      
+00001A30  EF5D                    1214      ROL.W   #7, D5
+00001A32  0245 0007               1215      ANDI.   #$0007, D5
+00001A36  4EB8 1106               1216      JSR     EA_HANDLE
+00001A3A                          1217      
+00001A3A  4E75                    1218      RTS
+00001A3C                          1219  
+00001A3C                          1220  MOVE_SIZEE
+00001A3C  0C06 0001               1221      CMPI.B  #1, D6
+00001A40  6700 000C               1222      BEQ     CBYTE
+00001A44  0C06 0003               1223      CMPI.B  #3, D6
+00001A48  6700 000A               1224      BEQ     CWORD
+00001A4C  4E75                    1225      RTS
+00001A4E                          1226      
+00001A4E                          1227  CBYTE   
+00001A4E  1C3C 0000               1228      MOVE.B  #0, D6
+00001A52  4E75                    1229      RTS
+00001A54                          1230  CWORD
+00001A54  1C3C 0001               1231      MOVE.B  #1, D6
+00001A58  4E75                    1232      RTS
+00001A5A                          1233      
+00001A5A                          1234  * -------------------------------------------
+00001A5A                          1235  * Display MOVEM PUSH AND POP, WORKING EA MODE 2) (An) 3) (An)+ 4) -(An) 7) .W 7) .W
+00001A5A                          1236  * REGISTER LOCATIONS are stored in D7
+00001A5A                          1237  DISPLAY_MOVEM 
+00001A5A  43F9 00002311           1238      LEA     DMOVEM, A1
+00001A60  103C 000E               1239      MOVE.B  #14, D0
+00001A64  4E4F                    1240      TRAP    #15
+00001A66                          1241      
+00001A66  4286                    1242      CLR.L   D6
+00001A68  1C03                    1243      MOVE.B  D3, D6              * D6 to store size 00 B 01 W 10 L       01 11 10
+00001A6A  EC4E                    1244      LSR.W   #6, D6              * shift size right
+00001A6C  5346                    1245      SUBQ    #1, D6
+00001A6E  4EB8 128E               1246      JSR     SIZE_HANDLE
+00001A72                          1247      
+00001A72  3E1D                    1248      MOVE.W  (A5)+, D7   
+00001A74                          1249      
+00001A74  43F9 000020B1           1250      LEA     space, A1      * space 
+00001A7A  103C 000E               1251      MOVE.B  #14, D0
+00001A7E  4E4F                    1252      TRAP    #15
+00001A80                          1253      
+00001A80  4EB9 00001A88           1254      JSR     MOVEM_DIR
+00001A86  4E75                    1255      RTS
+00001A88                          1256  
+00001A88                          1257  
+00001A88                          1258  MOVEM_DIR
+00001A88  4285                    1259      CLR.L   D5                  * Clear register
+00001A8A  4284                    1260      CLR.L   D4
+00001A8C                          1261      
+00001A8C  3803                    1262      MOVE.W  D3, D4              * D4 to store EA mode
+00001A8E  3A03                    1263      MOVE.W  D3, D5              * D5 to store EA register
+00001A90                          1264      
+00001A90  E64C                    1265      LSR.W   #3, D4              * rotate for EA mode
+00001A92  0244 0007               1266      ANDI.W  #$0007, D4          * mask last 3 bits
+00001A96  0245 0007               1267      ANDI.W  #$0007, D5          * mask last 3 bits
+00001A9A                          1268      
+00001A9A  3C03                    1269      MOVE.W  D3, D6
+00001A9C  0246 0400               1270      ANDI.W  #$0400, D6
+00001AA0  0C46 0400               1271      CMPI.W  #$0400, D6
+00001AA4  6700 002E               1272      BEQ     MEM2REG
+00001AA8                          1273      
+00001AA8  4281                    1274      CLR.L   D1
+00001AAA  4EB9 00001B00           1275      JSR     Display_register_BCS
+00001AB0  43F9 000022AC           1276      LEA     DComma, A1      * comma
+00001AB6  103C 000E               1277      MOVE.B  #14, D0
+00001ABA  4E4F                    1278      TRAP    #15
+00001ABC                          1279      
+00001ABC  4285                    1280      CLR.L   D5                  * Clear register
+00001ABE  4284                    1281      CLR.L   D4
+00001AC0                          1282      
+00001AC0  3803                    1283      MOVE.W  D3, D4              * D4 to store EA mode
+00001AC2  3A03                    1284      MOVE.W  D3, D5              * D5 to store EA register
+00001AC4                          1285      
+00001AC4  E64C                    1286      LSR.W   #3, D4              * rotate for EA mode
+00001AC6  0244 0007               1287      ANDI.W  #$0007, D4          * mask last 3 bits
+00001ACA  0245 0007               1288      ANDI.W  #$0007, D5          * mask last 3 bits
+00001ACE  4EB8 1106               1289      JSR     EA_HANDLE
+00001AD2  4E75                    1290      RTS
+00001AD4                          1291  
+00001AD4                          1292  MEM2REG
+00001AD4  4285                    1293      CLR.L   D5                  * Clear register
+00001AD6  4284                    1294      CLR.L   D4
+00001AD8                          1295      
+00001AD8  3803                    1296      MOVE.W  D3, D4              * D4 to store EA mode
+00001ADA  3A03                    1297      MOVE.W  D3, D5              * D5 to store EA register
+00001ADC                          1298      
+00001ADC  E64C                    1299      LSR.W   #3, D4              * rotate for EA mode
+00001ADE  0244 0007               1300      ANDI.W  #$0007, D4          * mask last 3 bits
+00001AE2  0245 0007               1301      ANDI.W  #$0007, D5          * mask last 3 bits
+00001AE6  4EB8 1106               1302      JSR     EA_HANDLE
+00001AEA                          1303      
+00001AEA  43F9 000022AC           1304      LEA     DComma, A1      * comma
+00001AF0  103C 000E               1305      MOVE.B  #14, D0
+00001AF4  4E4F                    1306      TRAP    #15
+00001AF6                          1307      
+00001AF6  4281                    1308      CLR.L   D1
+00001AF8  4EB9 00001B00           1309      JSR     Display_register_BCS  
+00001AFE  4E75                    1310      RTS
+00001B00                          1311   
+00001B00                          1312  Display_register_BCS
+00001B00  0C04 0004               1313      CMPI.B  #4, D4
+00001B04  6700 0018               1314      BEQ     Display_register_D
+00001B08                          1315      
+00001B08  0C47 0000               1316      CMPI.W  #0, D7
+00001B0C  6700 0026               1317      BEQ     END_D
+00001B10  4285                    1318      CLR.L   D5
+00001B12  E24F                    1319      LSR.W   #1, D7
+00001B14  6500 0020               1320      BCS     PRINT_REGISTER
+00001B18  5201                    1321      ADDI.B   #1, D1
+00001B1A  4EF8 1B00               1322      JMP     Display_register_BCS
+00001B1E                          1323  
+00001B1E                          1324  Display_register_D  
+00001B1E  0C47 0000               1325      CMPI.W  #0, D7
+00001B22  6700 0010               1326      BEQ     END_D
+00001B26  4285                    1327      CLR.L   D5
+00001B28  E34F                    1328      LSL.W   #1, D7
+00001B2A  6500 000A               1329      BCS     PRINT_REGISTER
+00001B2E  5201                    1330      ADDI.B   #1, D1
+00001B30  4EF8 1B1E               1331      JMP     Display_register_D
+00001B34                          1332      
+00001B34                          1333  END_D
+00001B34                          1334      
+00001B34  4E75                    1335      RTS   
+00001B36                          1336  PRINT_REGISTER
+00001B36  0C01 0008               1337      CMPI.B  #8, D1
+00001B3A  6C00 0034               1338      BGE     PRINT_A
+00001B3E  43F9 00002292           1339      LEA     DDn, A1     
+00001B44  103C 000E               1340      MOVE.B  #14, D0
+00001B48  4E4F                    1341      TRAP    #15
+00001B4A                          1342      
+00001B4A  103C 0003               1343      MOVE.B  #3, D0
+00001B4E  4E4F                    1344      TRAP    #15
+00001B50                          1345      
+00001B50  5201                    1346      ADDI.B   #1, D1
+00001B52                          1347      
+00001B52  0C47 0000               1348      CMPI.W  #0, D7
+00001B56  67DC                    1349      BEQ     END_D
+00001B58                          1350      
+00001B58  43F9 00002326           1351      LEA     DSLASH, A1     
+00001B5E  103C 000E               1352      MOVE.B  #14, D0
+00001B62  4E4F                    1353      TRAP    #15
+00001B64                          1354      
+00001B64  0C04 0004               1355      CMPI.B  #4, D4
+00001B68  6700 003C               1356      BEQ     ROL_W
+00001B6C                          1357      
+00001B6C                          1358      
+00001B6C  4EF8 1B00               1359      JMP     Display_register_BCS
+00001B70                          1360  
+00001B70                          1361  
+00001B70                          1362  PRINT_A
+00001B70  43F9 00002294           1363      LEA     DAn, A1     
+00001B76  103C 000E               1364      MOVE.B  #14, D0
+00001B7A  4E4F                    1365      TRAP    #15
+00001B7C                          1366      
+00001B7C  5101                    1367      SUBI.B  #8, D1
+00001B7E  103C 0003               1368      MOVE.B  #3, D0
+00001B82  4E4F                    1369      TRAP    #15
+00001B84  5001                    1370      ADDI.B  #8, D1
+00001B86                          1371      
+00001B86  5201                    1372      ADDI.B   #1, D1
+00001B88                          1373      
+00001B88  0C47 0000               1374      CMPI.W  #0, D7
+00001B8C  67A6                    1375      BEQ     END_D
+00001B8E                          1376      
+00001B8E  43F9 00002326           1377      LEA     DSLASH, A1     
+00001B94  103C 000E               1378      MOVE.B  #14, D0
+00001B98  4E4F                    1379      TRAP    #15
+00001B9A                          1380      
+00001B9A                          1381      
+00001B9A  0C04 0004               1382      CMPI.B  #4, D4
+00001B9E  6700 0006               1383      BEQ     ROL_W
+00001BA2                          1384      
+00001BA2                          1385      
+00001BA2  4EF8 1B00               1386      JMP     Display_register_BCS
+00001BA6                          1387  
+00001BA6                          1388  ROL_W
+00001BA6  4EF8 1B1E               1389      JMP     Display_register_D
+00001BAA                          1390  * -------------------------------------------
+00001BAA                          1391  * Display AND instruction and source and destination EA mode
+00001BAA                          1392  DISPLAY_AND   
+00001BAA  43F9 00002317           1393      LEA     DAND, A1
+00001BB0  103C 000E               1394      MOVE.B  #14, D0
+00001BB4  4E4F                    1395      TRAP    #15
+00001BB6                          1396      
+00001BB6  4206                    1397      CLR.B   D6
+00001BB8  3C03                    1398      MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+00001BBA  EC4E                    1399      LSR.W   #6, D6              * shift size right
+00001BBC  0246 0003               1400      ANDI.W  #3, D6
+00001BC0  4EB8 128E               1401      JSR     SIZE_HANDLE
+00001BC4                          1402      
+00001BC4  43F9 000020B1           1403      LEA     space, A1      * space 
+00001BCA  103C 000E               1404      MOVE.B  #14, D0
+00001BCE  4E4F                    1405      TRAP    #15
+00001BD0                          1406      
+00001BD0  4247                    1407      CLR     D7
+00001BD2  3E03                    1408      MOVE.W  D3, D7
+00001BD4  E04F                    1409      LSR.W   #8, D7
+00001BD6  0247 0001               1410      ANDI.W  #1, D7
+00001BDA  4EB9 00001C8A           1411      JSR     MODE_CHECK
+00001BE0                          1412      
+00001BE0  4E75                    1413      RTS
+00001BE2                          1414  
+00001BE2                          1415  * -------------------------------------------
+00001BE2                          1416  * Display OR instruction and source and destination EA mode
+00001BE2                          1417  DISPLAY_OR   
+00001BE2  43F9 0000231B           1418      LEA     DOR, A1
+00001BE8  103C 000E               1419      MOVE.B  #14, D0
+00001BEC  4E4F                    1420      TRAP    #15
+00001BEE                          1421      
+00001BEE  4206                    1422      CLR.B   D6
+00001BF0  3C03                    1423      MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+00001BF2  EC4E                    1424      LSR.W   #6, D6              * shift size right
+00001BF4  0246 0003               1425      ANDI.W  #3, D6
+00001BF8  4EB8 128E               1426      JSR     SIZE_HANDLE
+00001BFC                          1427      
+00001BFC  43F9 000020B1           1428      LEA     space, A1      * space 
+00001C02  103C 000E               1429      MOVE.B  #14, D0
+00001C06  4E4F                    1430      TRAP    #15
+00001C08                          1431      
+00001C08  4247                    1432      CLR     D7
+00001C0A  3E03                    1433      MOVE.W  D3, D7
+00001C0C  E04F                    1434      LSR.W   #8, D7
+00001C0E  0247 0001               1435      ANDI.W  #1, D7
+00001C12  4EB9 00001C8A           1436      JSR     MODE_CHECK
+00001C18                          1437      
+00001C18  4E75                    1438      RTS
+00001C1A                          1439      
+00001C1A                          1440  * -------------------------------------------
+00001C1A                          1441  * Display ADD instruction and source and destination EA mode
+00001C1A                          1442  DISPLAY_ADD   
+00001C1A  43F9 0000231E           1443      LEA     DADD, A1
+00001C20  103C 000E               1444      MOVE.B  #14, D0
+00001C24  4E4F                    1445      TRAP    #15
+00001C26                          1446      
+00001C26  4206                    1447      CLR.B   D6
+00001C28  3C03                    1448      MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+00001C2A  EC4E                    1449      LSR.W   #6, D6              * shift size right
+00001C2C  0246 0003               1450      ANDI.W  #3, D6
+00001C30  4EB8 128E               1451      JSR     SIZE_HANDLE
+00001C34                          1452      
+00001C34  43F9 000020B1           1453      LEA     space, A1      * space 
+00001C3A  103C 000E               1454      MOVE.B  #14, D0
+00001C3E  4E4F                    1455      TRAP    #15
+00001C40                          1456      
+00001C40  4247                    1457      CLR     D7
+00001C42  3E03                    1458      MOVE.W  D3, D7
+00001C44  E04F                    1459      LSR.W   #8, D7
+00001C46  0247 0001               1460      ANDI.W  #1, D7
+00001C4A  4EB9 00001C8A           1461      JSR     MODE_CHECK
+00001C50                          1462      
+00001C50  4E75                    1463      RTS
+00001C52                          1464      
+00001C52                          1465  * -------------------------------------------
+00001C52                          1466  * Display SUB instruction and source and destination EA mode
+00001C52                          1467  DISPLAY_SUB   
+00001C52  43F9 00002322           1468      LEA     DSUB, A1
+00001C58  103C 000E               1469      MOVE.B  #14, D0
+00001C5C  4E4F                    1470      TRAP    #15
+00001C5E                          1471      
+00001C5E  4206                    1472      CLR.B   D6
+00001C60  3C03                    1473      MOVE.W  D3, D6              * D6 to store size 00 B 01 W 10 L      
+00001C62  EC4E                    1474      LSR.W   #6, D6              * shift size right
+00001C64  0246 0003               1475      ANDI.W  #3, D6
+00001C68  4EB8 128E               1476      JSR     SIZE_HANDLE
+00001C6C                          1477      
+00001C6C  43F9 000020B1           1478      LEA     space, A1      * space 
+00001C72  103C 000E               1479      MOVE.B  #14, D0
+00001C76  4E4F                    1480      TRAP    #15
+00001C78                          1481      
+00001C78  4247                    1482      CLR     D7
+00001C7A  3E03                    1483      MOVE.W  D3, D7
+00001C7C  E04F                    1484      LSR.W   #8, D7
+00001C7E  0247 0001               1485      ANDI.W  #1, D7
+00001C82  4EB9 00001C8A           1486      JSR     MODE_CHECK
+00001C88                          1487      
+00001C88  4E75                    1488      RTS
+00001C8A                          1489  
+00001C8A                          1490  
+00001C8A                          1491  MODE_CHECK
+00001C8A  0C07 0001               1492      CMPI.B  #1, D7
+00001C8E  6700 003A               1493      BEQ     Dn_EA
+00001C92                          1494      
+00001C92  4285                    1495      CLR.L   D5                  * Clear register
+00001C94  4284                    1496      CLR.L   D4
+00001C96                          1497      
+00001C96  3803                    1498      MOVE.W  D3, D4              * D4 to store EA mode
+00001C98  3A03                    1499      MOVE.W  D3, D5              * D5 to store EA register
+00001C9A                          1500      
+00001C9A  E64C                    1501      LSR.W   #3, D4              * rotate for EA mode
+00001C9C  0244 0007               1502      ANDI.W  #$0007, D4          * mask last 3 bits
+00001CA0  0245 0007               1503      ANDI.W  #$0007, D5          * mask last 3 bits
+00001CA4  4EB8 1106               1504      JSR     EA_HANDLE
+00001CA8                          1505      
+00001CA8  43F9 000022AC           1506      LEA     DComma, A1      * comma
+00001CAE  103C 000E               1507      MOVE.B  #14, D0
+00001CB2  4E4F                    1508      TRAP    #15
+00001CB4                          1509      
+00001CB4  4285                    1510      CLR.L   D5                  * Clear register
+00001CB6  4284                    1511      CLR.L   D4
+00001CB8                          1512      
+00001CB8  383C 0000               1513      MOVE.W  #0, D4              * D4 to store EA mode
+00001CBC  3A03                    1514      MOVE.W  D3, D5              * D5 to store EA register    
+00001CBE  EF5D                    1515      ROL.W   #7, D5
+00001CC0  0245 0007               1516      ANDI.   #$0007, D5
+00001CC4  4EB8 1106               1517      JSR     EA_HANDLE
+00001CC8  4E75                    1518      RTS
+00001CCA                          1519  
+00001CCA                          1520  Dn_EA   
+00001CCA  4285                    1521      CLR.L   D5                  * Clear register
+00001CCC  4284                    1522      CLR.L   D4
+00001CCE                          1523      
+00001CCE  383C 0000               1524      MOVE.W  #0, D4              * D4 to store EA mode
+00001CD2  3A03                    1525      MOVE.W  D3, D5              * D5 to store EA register    
+00001CD4  EF5D                    1526      ROL.W   #7, D5
+00001CD6  0245 0007               1527      ANDI.   #$0007, D5
+00001CDA  4EB8 1106               1528      JSR     EA_HANDLE
+00001CDE                          1529      
+00001CDE  43F9 000022AC           1530      LEA     DComma, A1      * comma
+00001CE4  103C 000E               1531      MOVE.B  #14, D0
+00001CE8  4E4F                    1532      TRAP    #15
+00001CEA                          1533      
+00001CEA  4285                    1534      CLR.L   D5                  * Clear register
+00001CEC  4284                    1535      CLR.L   D4
+00001CEE                          1536      
+00001CEE  3803                    1537      MOVE.W  D3, D4              * D4 to store EA mode
+00001CF0  3A03                    1538      MOVE.W  D3, D5              * D5 to store EA register
+00001CF2                          1539      
+00001CF2  E64C                    1540      LSR.W   #3, D4              * rotate for EA mode
+00001CF4  0244 0007               1541      ANDI.W  #$0007, D4          * mask last 3 bits
+00001CF8  0245 0007               1542      ANDI.W  #$0007, D5          * mask last 3 bits
+00001CFC  4EB8 1106               1543      JSR     EA_HANDLE
+00001D00  4E75                    1544      RTS
+00001D02                          1545          
+00001D02                          1546  BXX_CONDITION
+00001D02  0C44 0400               1547      CMPI.W  #$0400, D4
+00001D06  6700 0020               1548      BEQ     Display_BCC
+00001D0A  0C44 0E00               1549      CMPI.W  #$0E00, D4
+00001D0E  6700 0026               1550      BEQ     Display_BGT
+00001D12  0C44 0F00               1551      CMPI.W  #$0F00, D4
+00001D16  6700 002C               1552      BEQ     Display_BLE
+00001D1A  43F9 00002308           1553      LEA     DBXX, A1     
+00001D20  103C 000E               1554      MOVE.B  #14, D0
+00001D24  4E4F                    1555      TRAP    #15
+00001D26  4E75                    1556      RTS
+00001D28                          1557  Display_BCC
+00001D28  43F9 000022FC           1558      LEA     DBCC, A1     
+00001D2E  103C 000E               1559      MOVE.B  #14, D0
+00001D32  4E4F                    1560      TRAP    #15
+00001D34  4E75                    1561      RTS
+00001D36                          1562  Display_BGT
+00001D36  43F9 00002300           1563      LEA     DBGT, A1     
+00001D3C  103C 000E               1564      MOVE.B  #14, D0
+00001D40  4E4F                    1565      TRAP    #15
+00001D42  4E75                    1566      RTS
+00001D44                          1567  Display_BLE   
+00001D44  43F9 00002304           1568      LEA     DBLE, A1     
+00001D4A  103C 000E               1569      MOVE.B  #14, D0
+00001D4E  4E4F                    1570      TRAP    #15
+00001D50  4E75                    1571      RTS
+00001D52                          1572  
+00001D52                          1573  DISPLACEMENT_HANDLE
+00001D52  0C03 0000               1574      CMPI.B  #$00, D3
+00001D56  6700 001A               1575      BEQ     WORD_D
+00001D5A  0C03 00FF               1576      CMPI.B  #$FF, D3
+00001D5E  6700 0020               1577      BEQ     LONG_D
+00001D62                          1578      
+00001D62  1403                    1579      MOVE.B  D3, D2
+00001D64  11FC 0004 0400          1580      MOVE.B  #$4, $400
+00001D6A  4EB9 00001E90           1581      JSR Display_Address
+00001D70  4E75                    1582      RTS   
+00001D72                          1583      
+00001D72                          1584  WORD_D
+00001D72  383C 0007               1585      MOVE.W  #7, D4
+00001D76  3A3C 0000               1586      MOVE.W  #0, D5              * D5 to store EA register
+00001D7A  4EB8 1106               1587      JSR     EA_HANDLE  
+00001D7E  4E75                    1588      RTS   
+00001D80                          1589      
+00001D80                          1590  LONG_D
+00001D80  383C 0007               1591      MOVE.W  #7, D4
+00001D84  3A3C 0001               1592      MOVE.W  #1, D5              * D5 to store EA register
+00001D88  4EB8 1106               1593      JSR     EA_HANDLE  
+00001D8C  4E75                    1594      RTS   
+00001D8E                          1595  ZERO2EIGHT
+00001D8E  0C02 0000               1596      CMPI.B  #0, D2
+00001D92  6700 0004               1597      BEQ     Z2E
+00001D96  4E75                    1598      RTS  
+00001D98                          1599      
+00001D98                          1600  Z2E
+00001D98  7408                    1601      MOVEQ   #8, D2
+00001D9A  4E75                    1602      RTS
+00001D9C                          1603  RANGE_CHECK
+00001D9C  B4BC 00FFFFFF           1604      CMP.L   #$FFFFFF, D2        * check upper bound
+00001DA2  6E00 003C               1605      BGT     RANGE_ERROR
+00001DA6  B4BC 00001000           1606      CMP.L   #$1000, D2          * check lower bound
+00001DAC  6D00 0032               1607      BLT     RANGE_ERROR
+00001DB0  2A02                    1608      MOVE.L  D2, D5              * check odd
+00001DB2  CABC 00000001           1609      AND.L   #$01, D5
+00001DB8  6200 0038               1610      BHI     ODD_ERROR   
+00001DBC  1C3C 0000               1611      MOVE.B  #0, D6              * Set error flag as okay
+00001DC0  4E75                    1612      RTS
+00001DC2                          1613      
+00001DC2                          1614  * --------------------------------------------------
+00001DC2                          1615  * Check if end > start
+00001DC2                          1616  DIFFERENCE_CHECK
+00001DC2  B48D                    1617      CMP.L   A5, D2
+00001DC4  6F00 0008               1618      BLE     DIFFERENCE_ERROR
+00001DC8  1C3C 0000               1619      MOVE.B  #0, D6              * Set error flag as okay
+00001DCC  4E75                    1620      RTS
+00001DCE                          1621      
+00001DCE                          1622  * --------------------------------------------------
+00001DCE                          1623  * Display error message for end < start
+00001DCE                          1624  DIFFERENCE_ERROR
+00001DCE  43F9 000021BE           1625      LEA     DifferentError, A1
+00001DD4  103C 000E               1626      MOVE.B  #14, D0
+00001DD8  4E4F                    1627      TRAP    #15
+00001DDA  1C3C 0001               1628      MOVE.B  #1, D6      * use D2 as a flag to check input
+00001DDE  4E75                    1629      RTS
+00001DE0                          1630  * ---------------------------------------------
+00001DE0                          1631  * Display range error message
+00001DE0                          1632  RANGE_ERROR
+00001DE0  43F9 0000219D           1633      LEA     RangeError, A1
+00001DE6  103C 000E               1634      MOVE.B  #14, D0
+00001DEA  4E4F                    1635      TRAP    #15
+00001DEC  1C3C 0001               1636      MOVE.B  #1, D6      * set error flag as fault
+00001DF0  4E75                    1637      RTS
+00001DF2                          1638  
+00001DF2                          1639  * --------------------------------------------------
+00001DF2                          1640  * Display odd error message
+00001DF2                          1641  ODD_ERROR
+00001DF2  43F9 000021FC           1642      LEA     OddError, A1
+00001DF8  103C 000E               1643      MOVE.B  #14, D0
+00001DFC  4E4F                    1644      TRAP    #15
+00001DFE  1C3C 0001               1645      MOVE.B  #1, D6      * use D6 as a flag to check input
+00001E02  4E75                    1646      RTS
+00001E04                          1647  
+00001E04                          1648  * -------------------------------------------
+00001E04                          1649  * Check lower case character
+00001E04                          1650  LOWER_CASE_CHECK
+00001E04                          1651      
+00001E04  0C11 0066               1652      CMP.B   #102, (A1)      * check lower case f = 102. If the character is greater than 102 it is not hex
+00001E08  6E00 0074               1653      BGT     INPUT_ERROR
+00001E0C  0C11 0061               1654      CMP.B   #97, (A1)      *  check lower case a = 97. If the character is less than 97, it might be upper case character. Need further check.
+00001E10  6D00 0018               1655      BLT     UPPER_CASE_CHECK
+00001E14                          1656      
+00001E14  0411 0057               1657      SUB.B   #87, (A1)      * Subtract 87 to convert lower case char to hex number
+00001E18                          1658  
+00001E18  4EB9 00001E76           1659      JSR     ADDRESS_CONFIGURE   * Jump to subroutine for properly configure the address
+00001E1E                          1660  
+00001E1E  5301                    1661      SUB.B   #1, D1          * minus 1 , if D1 = 0, end converting char to number
+00001E20  5289                    1662      ADDQ.L  #1, A1          * Increment address pointer
+00001E22  B23C 0000               1663      CMP.B   #0, D1          * Check if D1 == 0, if not continue read char.
+00001E26  6EDC                    1664      BGT     LOWER_CASE_CHECK
+00001E28  4E75                    1665      RTS
+00001E2A                          1666      
+00001E2A                          1667  * -------------------------------------------
+00001E2A                          1668  * Check upper case character
+00001E2A                          1669  UPPER_CASE_CHECK
+00001E2A  0C11 0046               1670      CMP.B   #70, (A1)      * check upper case f = 70. If the character is greater than 70 it is not hex
+00001E2E  6E00 004E               1671      BGT     INPUT_ERROR
+00001E32  0C11 0041               1672      CMP.B   #65, (A1)      * check lower case a = 65. If the character is less than 65 it is not hex
+00001E36  6D00 0018               1673      BLT     NUMBER_CHECK
+00001E3A  0411 0037               1674      SUB.B   #55, (A1)      * Subtract 55 to convert upper case char to hex number
+00001E3E                          1675  
+00001E3E  4EB9 00001E76           1676      JSR     ADDRESS_CONFIGURE   
+00001E44                          1677  
+00001E44  5301                    1678      SUB.B   #1, D1          * minus 1
+00001E46  5289                    1679      ADDQ.L  #1, A1          * Increment address pointer
+00001E48  B23C 0000               1680      CMP.B   #0, D1          * Check if D1 == 0
+00001E4C  6EB6                    1681      BGT     LOWER_CASE_CHECK
+00001E4E  4E75                    1682      RTS
+00001E50                          1683  
+00001E50                          1684  * -------------------------------------------
+00001E50                          1685  * Check number
+00001E50                          1686  NUMBER_CHECK
+00001E50  0C11 0039               1687      CMP.B   #57, (A1)      * check number 9. If the character is greater than 57 it is not number
+00001E54  6E00 0028               1688      BGT     INPUT_ERROR
+00001E58  0C11 0030               1689      CMP.B   #48, (A1)      * check number 0. If the character is less than 48 it is not number
+00001E5C  6D00 0020               1690      BLT     INPUT_ERROR
+00001E60  0411 0030               1691      SUB.B   #48, (A1)      * Subtract 48 to convert number to equivalent Hex value
+00001E64                          1692  
+00001E64  4EB9 00001E76           1693      JSR     ADDRESS_CONFIGURE     * Jump to subroutine for properly configure the address
+00001E6A                          1694  
+00001E6A  5301                    1695      SUB.B   #1, D1          * Similar to 1st input check
+00001E6C  5289                    1696      ADDQ.L  #1, A1
+00001E6E  B23C 0000               1697      CMP.B   #0, D1
+00001E72  6E90                    1698      BGT     LOWER_CASE_CHECK
+00001E74  4E75                    1699      RTS
+00001E76                          1700  
+00001E76                          1701  * --------------------------------------------------
+00001E76                          1702  * Properly configure address
+00001E76                          1703  ADDRESS_CONFIGURE
+00001E76  C5FC 0010               1704      MULS    #$10, D2        * shift left
+00001E7A  D411                    1705      ADD.B   (A1), D2
+00001E7C  4E75                    1706      RTS
+00001E7E                          1707  
+00001E7E                          1708  * --------------------------------------------------
+00001E7E                          1709  * Display error message for wrong input Hex and set error flag
+00001E7E                          1710  INPUT_ERROR
+00001E7E  43F9 00002171           1711      LEA     typeInputError, A1
+00001E84  103C 000E               1712      MOVE.B  #14, D0
+00001E88  4E4F                    1713      TRAP    #15
+00001E8A  1C3C 0001               1714      MOVE.B  #1, D6      * use D2 as a flag to check input
+00001E8E  4E75                    1715      RTS
+00001E90                          1716      
+00001E90                          1717  * --------------------------------------------------
+00001E90                          1718  * Display hex. hex must be stored in D2 and number of rotation in memory $400
+00001E90                          1719  Display_Address
+00001E90  E95A                    1720      ROL.W   #4,D2       * Rotate the first hex number to the back so we can read    
+00001E92  1202                    1721      MOVE.B  D2, D1      * D1 to store the byte data
+00001E94  0201 000F               1722      ANDI.B  #$0F,D1     * AND the byte data so we can only see the first one    
+00001E98  0C01 000A               1723      CMPI.B  #$A,D1      * check if it is greater than A
+00001E9C  4EB9 00001FE4           1724      JSR     DisplayChar * If yes jmp to display (A - F)
+00001EA2  0C01 000A               1725      CMPI.B  #$A,D1      * check if it is less than A
+00001EA6  6D00 014A               1726      BLT     DisplayNum  * If yes jmp to display (0 - 9)
+00001EAA  103C 0006               1727      MOVE.B  #6,D0       * TRAP 6 display character
+00001EAE  4E4F                    1728      TRAP    #15         
+00001EB0  5338 0400               1729      SUB.B   #1, $400
+00001EB4  0C38 0000 0400          1730      CMPI.B  #0, $400   *check if roatation done
+00001EBA  66D4                    1731      BNE Display_Address
+00001EBC  4E75                    1732      RTS
+00001EBE                          1733      
+00001EBE                          1734  * --------------------------------------------------
+00001EBE                          1735  * Display hex. hex must be stored in D2 and number of rotation in memory $400
+00001EBE                          1736  Display_Address_L
+00001EBE  E99A                    1737      ROL.L   #4,D2       * Rotate the first hex number to the back so we can read    
+00001EC0  1202                    1738      MOVE.B  D2, D1      * D1 to store the byte data
+00001EC2  0201 000F               1739      ANDI.B  #$0F,D1     * AND the byte data so we can only see the first one    
+00001EC6  0C01 000A               1740      CMPI.B  #$A,D1      * check if it is greater than A
+00001ECA  4EB9 00001FE4           1741      JSR     DisplayChar * If yes jmp to display (A - F)
+00001ED0  103C 0006               1742      MOVE.B  #6,D0       * TRAP 6 display character
+00001ED4  4E4F                    1743      TRAP    #15         
+00001ED6  5338 0400               1744      SUB.B   #1, $400
+00001EDA  0C38 0000 0400          1745      CMPI.B   #0, $400   *check if roatation done
+00001EE0  66DC                    1746      BNE Display_Address_L
+00001EE2  4E75                    1747      RTS
+00001EE4                          1748  
+00001EE4                          1749  * ----------------------------------------
+00001EE4                          1750  * determine what rotation it is  information must be store in D6
+00001EE4                          1751  * 0 = ASR, 1 = ASL, 2 = LSR, 3 = LSL, 6 = ROR, 7 = ROL
+00001EE4                          1752  ROTATION_CHECK   
+00001EE4  0C06 0000               1753      CMPI.B  #0, D6
+00001EE8  6700 00A6               1754      BEQ     Display_ASR
+00001EEC  0C06 0001               1755      CMPI.B  #1, D6
+00001EF0  6700 00AC               1756      BEQ     Display_ASL
+00001EF4  0C06 0002               1757      CMPI.B  #2, D6
+00001EF8  6700 00B2               1758      BEQ     Display_LSR
+00001EFC  0C06 0003               1759      CMPI.B  #3, D6
+00001F00  6700 00B8               1760      BEQ     Display_LSL
+00001F04  0C06 0006               1761      CMPI.B  #6, D6
+00001F08  6700 00BE               1762      BEQ     Display_ROR
+00001F0C  0C06 0007               1763      CMPI.B  #7, D6
+00001F10  6700 00C4               1764      BEQ     Display_ROL
+00001F14  4E75                    1765      RTS
+00001F16                          1766      
+00001F16                          1767  IORR
+00001F16  3A03                    1768      MOVE.W  D3, D5
+00001F18  0245 0020               1769      ANDI.W  #$0020, D5
+00001F1C  0C45 0020               1770      CMPI.W  #$0020, D5
+00001F20  6700 003C               1771      BEQ     REGISTER_SHIFT
+00001F24                          1772      
+00001F24  43F9 000022A9           1773      LEA     DIM, A1     
+00001F2A  103C 000E               1774      MOVE.B  #14, D0
+00001F2E  4E4F                    1775      TRAP    #15
+00001F30                          1776      
+00001F30  3A03                    1777      MOVE.W  D3, D5
+00001F32  EF5D                    1778      ROL.W   #7, D5
+00001F34  0245 0007               1779      ANDI    #$0007, D5
+00001F38                          1780      
+00001F38  1405                    1781      MOVE.B  D5, D2
+00001F3A  4EB8 1D8E               1782      JSR     ZERO2EIGHT
+00001F3E  1A02                    1783      MOVE.B  D2, D5
+00001F40                          1784      
+00001F40  4281                    1785      CLR.L   D1
+00001F42  1205                    1786      MOVE.B  D5, D1
+00001F44  4EB9 00001FF2           1787      JSR     DisplayNum
+00001F4A  103C 0006               1788      MOVE.B  #6, D0
+00001F4E  4E4F                    1789      TRAP    #15
+00001F50                          1790      
+00001F50  43F9 000022AC           1791      LEA     DComma, A1     
+00001F56  103C 000E               1792      MOVE.B  #14, D0
+00001F5A  4E4F                    1793      TRAP    #15
+00001F5C  4E75                    1794      RTS
+00001F5E                          1795      
+00001F5E                          1796  REGISTER_SHIFT
+00001F5E  43F9 00002292           1797      LEA     DDn, A1     
+00001F64  103C 000E               1798      MOVE.B  #14, D0
+00001F68  4E4F                    1799      TRAP    #15
+00001F6A                          1800      
+00001F6A  3A03                    1801      MOVE.W  D3, D5
+00001F6C  EF5D                    1802      ROL.W   #7, D5
+00001F6E  0245 0007               1803      ANDI    #$0007, D5
+00001F72                          1804      
+00001F72  4281                    1805      CLR.L   D1
+00001F74  1205                    1806      MOVE.B  D5, D1
+00001F76  4EB9 00001FF2           1807      JSR     DisplayNum
+00001F7C  103C 0006               1808      MOVE.B  #6, D0
+00001F80  4E4F                    1809      TRAP    #15
+00001F82                          1810      
+00001F82  43F9 000022AC           1811      LEA     DComma, A1     
+00001F88  103C 000E               1812      MOVE.B  #14, D0
+00001F8C  4E4F                    1813      TRAP    #15
+00001F8E                          1814      
+00001F8E  4E75                    1815      RTS
+00001F90                          1816      
+00001F90                          1817  Display_ASR  
+00001F90  43F9 000022B7           1818      LEA     DASR, A1
+00001F96  103C 000E               1819      MOVE.B  #14, D0
+00001F9A  4E4F                    1820      TRAP    #15
+00001F9C  4E75                    1821      RTS
+00001F9E                          1822      
+00001F9E                          1823  Display_ASL  
+00001F9E  43F9 000022BB           1824      LEA     DASL, A1
+00001FA4  103C 000E               1825      MOVE.B  #14, D0
+00001FA8  4E4F                    1826      TRAP    #15
+00001FAA  4E75                    1827      RTS
+00001FAC                          1828      
+00001FAC                          1829  Display_LSR
+00001FAC  43F9 000022BF           1830      LEA     DLSR, A1
+00001FB2  103C 000E               1831      MOVE.B  #14, D0
+00001FB6  4E4F                    1832      TRAP    #15
+00001FB8  4E75                    1833      RTS
+00001FBA                          1834      
+00001FBA                          1835  Display_LSL
+00001FBA  43F9 000022C3           1836      LEA     DLSL, A1
+00001FC0  103C 000E               1837      MOVE.B  #14, D0
+00001FC4  4E4F                    1838      TRAP    #15
+00001FC6  4E75                    1839      RTS
+00001FC8                          1840      
+00001FC8                          1841  Display_ROR
+00001FC8  43F9 000022C7           1842      LEA     DROR, A1
+00001FCE  103C 000E               1843      MOVE.B  #14, D0
+00001FD2  4E4F                    1844      TRAP    #15
+00001FD4  4E75                    1845      RTS
+00001FD6                          1846      
+00001FD6                          1847  Display_ROL
+00001FD6  43F9 000022CB           1848      LEA     DROL, A1
+00001FDC  103C 000E               1849      MOVE.B  #14, D0
+00001FE0  4E4F                    1850      TRAP    #15
+00001FE2  4E75                    1851      RTS
+00001FE4                          1852      
+00001FE4                          1853  DisplayChar
+00001FE4  0C41 000A               1854      CMPI    #$A, D1
+00001FE8  6D00 0008               1855      BLT     DisplayNum
+00001FEC  0601 0037               1856      ADD.B   #55,D1
+00001FF0  4E75                    1857      RTS
+00001FF2                          1858      
+00001FF2                          1859      
+00001FF2                          1860  DisplayNum
+00001FF2  0601 0030               1861      ADD.B   #48,D1
+00001FF6  4E75                    1862      RTS
+00001FF8                          1863      
+00001FF8                          1864  Display_FFFF
+00001FF8  0C82 00008000           1865      CMPI.L  #$8000, D2
+00001FFE  6C00 0004               1866      BGE     FFFF
+00002002                          1867      
+00002002  4E75                    1868      RTS
+00002004                          1869      
+00002004                          1870  FFFF
+00002004  43F9 000022A2           1871      LEA     DFFFF, A1
+0000200A  103C 000E               1872      MOVE.B  #14, D0
+0000200E  4E4F                    1873      TRAP    #15
+00002010  4E75                    1874      RTS
+00002012                          1875  
+00002012                          1876  MOVE_SIZE
+00002012  0C06 0003               1877      CMPI.B  #$3, D6
+00002016  6700 0004               1878      BEQ     MOVE_WORD
+0000201A  4E75                    1879      RTS
+0000201C                          1880   
+0000201C                          1881  MOVE_WORD
+0000201C  5506                    1882      SUBI.B  #2, D6
+0000201E  4E75                    1883      RTS      
+00002020                          1884      
+00002020                          1885  LONG_CHECK
+00002020  0C06 0002               1886      CMPI.B  #2, D6
+00002024  6700 0012               1887      BEQ     D_LONG
+00002028  4282                    1888      CLR.L   D2              * 8 bit number
+0000202A  341D                    1889      MOVE.W  (A5)+, D2
+0000202C  11FC 0004 0400          1890      MOVE.B  #4, $400
+00002032  4EB8 1E90               1891      JSR Display_Address
+00002036  4E75                    1892      RTS
+00002038                          1893      
+00002038                          1894  D_LONG
+00002038  4282                    1895      CLR.L   D2              * 8 bit number
+0000203A  241D                    1896      MOVE.L  (A5)+, D2
+0000203C  11FC 0008 0400          1897      MOVE.B  #8, $400
+00002042  4EB8 1EBE               1898      JSR Display_Address_L
+00002046  4E75                    1899      RTS
+00002048                          1900      
+00002048                          1901  S_U_HANDLE
+00002048  0C06 0007               1902      CMPI.B  #7, D6
+0000204C  6700 0010               1903      BEQ     D_S_HANDLE
+00002050  43F9 0000232C           1904      LEA     Dunsigned, A1
+00002056  103C 000E               1905      MOVE.B  #14, D0
+0000205A  4E4F                    1906      TRAP    #15
+0000205C  4E75                    1907      RTS
+0000205E                          1908  
+0000205E                          1909  D_S_HANDLE
+0000205E  43F9 0000232E           1910      LEA     Dsigned, A1
+00002064  103C 000E               1911      MOVE.B  #14, D0
+00002068  4E4F                    1912      TRAP    #15
+0000206A  4E75                    1913      RTS    
+0000206C                          1914  
+0000206C                          1915  *-------------------------------------
+0000206C                          1916  *Handle end of user requested decoding.
+0000206C                          1917  *Prompt user to go again.    
+0000206C                          1918  DECODING_FINISHED
+0000206C  43F9 0000221B           1919      LEA     endDisplay, A1
+00002072  103C 000E               1920      MOVE.B  #14, D0
+00002076  4E4F                    1921      TRAP    #15
+00002078  43F9 00002257           1922      LEA     goAgainPrompt,A1
+0000207E  4E4F                    1923      Trap #15
+00002080  103C 0002               1924      MOVE.B  #2,D0
+00002084  327C 0700               1925      MOVE.w  #$700,A1
+00002088  4E4F                    1926      Trap #15
+0000208A  0C11 0059               1927      CMP.B   #$59,(A1)
+0000208E  6700 000A               1928      BEQ     GO_AGAIN_PREP
+00002092  0C11 0079               1929      CMP.B   #$79,(A1)
+00002096  6600 098A               1930      BNE     EXIT
+0000209A                          1931      
+0000209A                          1932  *------------------------------------
+0000209A                          1933  *Prep system for another round of decoding.
+0000209A                          1934  *Clear data registers
+0000209A                          1935  GO_AGAIN_PREP
+0000209A  4280                    1936      CLR.L   D0
+0000209C  4281                    1937      CLR.L   D1
+0000209E  4282                    1938      CLR.L   D2
+000020A0  4283                    1939      CLR.L   D3
+000020A2  4284                    1940      CLR.L   D4
+000020A4  4285                    1941      CLR.L   D5
+000020A6  4286                    1942      CLR.L   D6
+000020A8  4287                    1943      CLR.L   D7
+000020AA  6000 EF66               1944      BRA     userStartAddress 
+000020AE                          1945      
+000020AE                          1946  * -----------------------------------------------------------------------------------------------------------
+000020AE                          1947  * Variables and constants 
+000020AE                          1948  * -----------------------------------------------------------------------------------------------------------
+000020AE  =0000000D               1949  CR              EQU     $0D     * CR
+000020AE  =0000000A               1950  LF              EQU     $0A     * LF
+000020AE= 0D 0A 00                1951  NL              DC.B    CR,LF,0
+000020B1= 20 00                   1952  space           DC.B    ' ',0
+000020B3= 30 30 30 30 00          1953  zero            DC.B    '0000', 0
+000020B8= 57 65 6C 63 6F 6D ...   1954  startInput      DC.B    'Welcome to 68k disassembler! Christopher, Martin, Patric', CR, LF 
+000020F2= 50 6C 65 61 73 65 ...   1955                  DC.B    'Please enter starting address in Hex($1000 to $FFFFFF): ', 0
+0000212B= 50 6C 65 61 73 65 ...   1956  endInput        DC.B    'Please enter ending address in Hex(must greater than start address): ', 0
+00002171= 45 52 52 4F 52 3A ...   1957  typeInputError  DC.B    'ERROR: Your entered address is not a hex!', CR, LF, 0
+0000219D= 45 52 52 4F 52 3A ...   1958  RangeError       DC.B    'ERROR: Address is out of range', CR, LF, 0
+000021BE= 45 52 52 4F 52 3A ...   1959  DifferentError   DC.B    'ERROR: Ending address must be greater than Starting address', CR, LF, 0
+000021FC= 45 52 52 4F 52 3A ...   1960  OddError         DC.B    'ERROR: Address must be even ', CR, LF, 0
+0000221B= 59 6F 75 20 68 61 ...   1961  endDisplay      DC.B     'You have finihsed decoding', CR, LF, 0
+00002238= 50 6C 65 61 73 65 ...   1962  enterMessage    DC.B     'Please hit enter to continue', CR, LF, 0
+00002257= 57 6F 75 6C 64 20 ...   1963  goAgainPrompt   DC.B    'Would you like to go again? (y/n)',CR,LF,0
+0000227B= 0D 0A 00                1964  nullString      DC.B        '', CR, LF, 0
+0000227E                          1965  
+0000227E                          1966  * INSTRUCTION SET
+0000227E= 52 54 53 00             1967  DRTS            DC.B    'RTS',0
+00002282= 4E 4F 50 00             1968  DNOP            DC.B    'NOP',0
+00002286= 4A 53 52 00             1969  DJSR            DC.B    'JSR',0
+0000228A= 4E 45 47 00             1970  DNEG            DC.B    'NEG',0
+0000228E= 43 4C 52 00             1971  DCLR            DC.B    'CLR',0
+00002292                          1972  
+00002292                          1973  * Display EA mdode
+00002292= 44 00                   1974  DDn             DC.B    'D',0
+00002294= 41 00                   1975  DAn             DC.B    'A',0
+00002296= 28 41 00                1976  DAnplus         DC.B    '(A',0
+00002299= 29 00                   1977  DAnplusN        DC.B    ')',0
+0000229B= 29 2B 00                1978  DAnplusP        DC.B    ')+',0
+0000229E= 2D 28 41 00             1979  DminusAn        DC.B    '-(A',0
+000022A2= 46 46 46 46 00          1980  DFFFF           DC.B    'FFFF',0
+000022A7= 24 00                   1981  DAddress        DC.B    '$',0
+000022A9= 23 24 00                1982  DIM             DC.B    '#$',0
+000022AC= 2C 00                   1983  DComma          DC.B    ',',0
+000022AE                          1984  
+000022AE                          1985  * Display size
+000022AE= 2E 42 00                1986  DByte           DC.B    '.B', 0
+000022B1= 2E 57 00                1987  DWord           DC.B    '.W', 0
+000022B4= 2E 4C 00                1988  DLong           DC.B    '.L', 0
+000022B7                          1989  
+000022B7                          1990  * Display rotation type
+000022B7= 41 53 52 00             1991  DASR            DC.B    'ASR', 0
+000022BB= 41 53 4C 00             1992  DASL            DC.B    'ASL', 0
+000022BF= 4C 53 52 00             1993  DLSR            DC.B    'LSR', 0
+000022C3= 4C 53 4C 00             1994  DLSL            DC.B    'LSL', 0
+000022C7= 52 4F 52 00             1995  DROR            DC.B    'ROR', 0
+000022CB= 52 4F 4C 00             1996  DROL            DC.B    'ROL', 0
+000022CF                          1997  
+000022CF                          1998  * instruction
+000022CF= 4C 45 41 00             1999  DLEA            DC.B    'LEA', 0
+000022D3= 43 4D 50 00             2000  DCMP            DC.B    'CMP', 0
+000022D7= 4D 4F 56 45 51 00       2001  DMOVEQ          DC.B    'MOVEQ', 0
+000022DD= 41 44 44 51 00          2002  DADDQ           DC.B    'ADDQ', 0
+000022E2= 41 44 44 49 00          2003  DADDI           DC.B    'ADDI', 0
+000022E7= 53 55 42 49 00          2004  DSUBI           DC.B    'SUBI', 0
+000022EC= 41 44 44 41 00          2005  DADDA           DC.B    'ADDA', 0
+000022F1= 4D 4F 56 45 41 00       2006  DMOVEA          DC.B    'MOVEA', 0
+000022F7= 44 49 56 55 00          2007  DDIVU           DC.B    'DIVU',0
+000022FC= 42 43 43 00             2008  DBCC            DC.B    'BCC',0
+00002300= 42 47 54 00             2009  DBGT            DC.B    'BGT',0
+00002304= 42 4C 45 00             2010  DBLE            DC.B    'BLE',0
+00002308= 42 58 58 00             2011  DBXX            DC.B    'BXX',0
+0000230C= 4D 4F 56 45 00          2012  DMOVE           DC.B    'MOVE',0
+00002311= 4D 4F 56 45 4D 00       2013  DMOVEM          DC.B    'MOVEM',0
+00002317= 41 4E 44 00             2014  DAND            DC.B    'AND',0
+0000231B= 4F 52 00                2015  DOR             DC.B    'OR',0
+0000231E= 41 44 44 00             2016  DADD            DC.B    'ADD',0
+00002322= 53 55 42 00             2017  DSUB            DC.B    'SUB',0
+00002326= 2F 00                   2018  DSLASH          DC.B    '/',0
+00002328                          2019  
+00002328                          2020  * SIGN OR UNSIGN
+00002328= 4D 55 4C 00             2021  DMUL            DC.B    'MUL',0
+0000232C= 55 00                   2022  Dunsigned       DC.B    'U',0
+0000232E= 53 00                   2023  Dsigned         DC.B    'S',0
+00002330                          2024  
+00002330                          2025  *<<<<<<< HEAD
+00002330  4CD9 00FE               2026              MOVEM.L   (A1)+,D1-D7
+00002334  4C99 0280               2027              MOVEM.W   (A1)+,A1/D7
+00002338  4CD9 0280               2028              MOVEM.L   (A1)+,A1/D7
+0000233C  4C91 FE00               2029              MOVEM.W   (A1),A1-A7
+00002340                          2030              
+00002340  48B8 FE00 0012          2031              MOVEM.W   A1-A7,$12
+00002346                          2032  *=======
+00002346                          2033  NOP
+00002346  4E75                    2034      RTS
+00002348  4E71                    2035      NOP
+0000234A  4E75                    2036      RTS
+0000234C  41D0                    2037      LEA     (A0),A0
+0000234E  41D5                    2038      LEA     (A5),A0
+00002350  41D7                    2039      LEA     (A7),A0
+00002352  4FD0                    2040      LEA     (A0),A7
+00002354  4FD5                    2041      LEA     (A5),A7
+00002356  4FD7                    2042      LEA     (A7),A7
+00002358  4200                    2043      CLR.B     D0
+0000235A  4207                    2044      CLR.B     D7
+0000235C  4240                    2045      CLR.W     D0
+0000235E  4247                    2046      CLR.W     D7
+00002360  4280                    2047      CLR.L     D0
+00002362  4287                    2048      CLR.L     D7
+00002364  4210                    2049      CLR.B     (A0)
+00002366  4217                    2050      CLR.B     (A7)
+00002368  4250                    2051      CLR.W     (A0)
+0000236A  4257                    2052      CLR.W     (A7)
+0000236C  4290                    2053      CLR.L     (A0)
+0000236E  4297                    2054      CLR.L     (A7)
+00002370  4218                    2055      CLR.B     (A0)+
+00002372  421F                    2056      CLR.B     (A7)+
+00002374  4258                    2057      CLR.W     (A0)+
+00002376  425F                    2058      CLR.W     (A7)+
+00002378  4298                    2059      CLR.L     (A0)+
+0000237A  429F                    2060      CLR.L     (A7)+
+0000237C  4220                    2061      CLR.B     -(A0)
+0000237E  4227                    2062      CLR.B     -(A7)
+00002380  4260                    2063      CLR.W     -(A0)
+00002382  4267                    2064      CLR.W     -(A7)
+00002384  42A0                    2065      CLR.L     -(A0)
+00002386  42A7                    2066      CLR.L     -(A7)
+00002388  1200                    2067      MOVE.B    D0,D1
+0000238A  1080                    2068      MOVE.B    D0,(A0)
+0000238C  10C0                    2069      MOVE.B    D0,(A0)+
+0000238E  1100                    2070      MOVE.B    D0,-(A0)
+00002390  1010                    2071      MOVE.B    (A0),D0
+00002392  1290                    2072      MOVE.B    (A0),(A1)
+00002394  12D0                    2073      MOVE.B    (A0),(A1)+
+00002396  1310                    2074      MOVE.B    (A0),-(A1)
+00002398  1018                    2075      MOVE.B    (A0)+,D0
+0000239A  1298                    2076      MOVE.B    (A0)+,(A1)
+0000239C  12D8                    2077      MOVE.B    (A0)+,(A1)+
+0000239E  1318                    2078      MOVE.B    (A0)+,-(A1)
+000023A0  1020                    2079      MOVE.B    -(A0),D0
+000023A2  12A0                    2080      MOVE.B    -(A0),(A1)
+000023A4  12E0                    2081      MOVE.B    -(A0),(A1)+
+000023A6  1320                    2082      MOVE.B    -(A0),-(A1)
+000023A8  3200                    2083      MOVE.W    D0,D1
+000023AA  3080                    2084      MOVE.W    D0,(A0)
+000023AC  30C0                    2085      MOVE.W    D0,(A0)+
+000023AE  3100                    2086      MOVE.W    D0,-(A0)
+000023B0  3008                    2087      MOVE.W    A0,D0
+000023B2  3288                    2088      MOVE.W    A0,(A1)
+000023B4  32C8                    2089      MOVE.W    A0,(A1)+
+000023B6  3308                    2090      MOVE.W    A0,-(A1)
+000023B8  3010                    2091      MOVE.W    (A0),D0
+000023BA  3290                    2092      MOVE.W    (A0),(A1)
+000023BC  32D0                    2093      MOVE.W    (A0),(A1)+
+000023BE  3310                    2094      MOVE.W    (A0),-(A1)
+000023C0  3018                    2095      MOVE.W    (A0)+,D0
+000023C2  3298                    2096      MOVE.W    (A0)+,(A1)
+000023C4  32D8                    2097      MOVE.W    (A0)+,(A1)+
+000023C6  3318                    2098      MOVE.W    (A0)+,-(A1)
+000023C8  3020                    2099      MOVE.W    -(A0),D0
+000023CA  32A0                    2100      MOVE.W    -(A0),(A1)
+000023CC  32E0                    2101      MOVE.W    -(A0),(A1)+
+000023CE  3320                    2102      MOVE.W    -(A0),-(A1)
+000023D0  2200                    2103      MOVE.L    D0,D1
+000023D2  2080                    2104      MOVE.L    D0,(A0)
+000023D4  20C0                    2105      MOVE.L    D0,(A0)+
+000023D6  2100                    2106      MOVE.L    D0,-(A0)
+000023D8  2008                    2107      MOVE.L    A0,D0
+000023DA  2288                    2108      MOVE.L    A0,(A1)
+000023DC  22C8                    2109      MOVE.L    A0,(A1)+
+000023DE  2308                    2110      MOVE.L    A0,-(A1)
+000023E0  2010                    2111      MOVE.L    (A0),D0
+000023E2  2290                    2112      MOVE.L    (A0),(A1)
+000023E4  22D0                    2113      MOVE.L    (A0),(A1)+
+000023E6  2310                    2114      MOVE.L    (A0),-(A1)
+000023E8  2018                    2115      MOVE.L    (A0)+,D0
+000023EA  2298                    2116      MOVE.L    (A0)+,(A1)
+000023EC  22D8                    2117      MOVE.L    (A0)+,(A1)+
+000023EE  2318                    2118      MOVE.L    (A0)+,-(A1)
+000023F0  2020                    2119      MOVE.L    -(A0),D0
+000023F2  22A0                    2120      MOVE.L    -(A0),(A1)
+000023F4  22E0                    2121      MOVE.L    -(A0),(A1)+
+000023F6  2320                    2122      MOVE.L    -(A0),-(A1)
+000023F8  48A1 007F               2123      MOVEM.W   A1-A7,-(A1)
+000023FC  48E1 7F00               2124      MOVEM.L   D1-D7,-(A1)
+00002400  48A1 0140               2125      MOVEM.W   A1/D7,-(A1)
+00002404  48E1 0140               2126      MOVEM.L   A1/D7,-(A1)
+00002408  4891 FE00               2127      MOVEM.W   A1-A7,(A1)
+0000240C  48D1 00FE               2128      MOVEM.L   D1-D7,(A1)
+00002410  4891 0280               2129      MOVEM.W   A1/D7,(A1)
+00002414  48D1 0280               2130      MOVEM.L   A1/D7,(A1)
+00002418  4C99 FE00               2131      MOVEM.W   (A1)+,A1-A7
+0000241C  4CD9 00FE               2132      MOVEM.L   (A1)+,D1-D7
+00002420  4C99 0280               2133      MOVEM.W   (A1)+,A1/D7
+00002424  4CD9 0280               2134      MOVEM.L   (A1)+,A1/D7
+00002428  4C91 FE00               2135      MOVEM.W   (A1),A1-A7
+0000242C  4CD1 00FE               2136      MOVEM.L   (A1),D1-D7
+00002430  4C91 0280               2137      MOVEM.W   (A1),A1/D7
+00002434  4CD1 0280               2138      MOVEM.L   (A1),A1/D7
+00002438  3040                    2139      MOVEA.W    D0,A0
+0000243A  3048                    2140      MOVEA.W    A0,A0
+0000243C  3050                    2141      MOVEA.W    (A0),A0
+0000243E  3058                    2142      MOVEA.W    (A0)+,A0
+00002440  3060                    2143      MOVEA.W    -(A0),A0
+00002442  2040                    2144      MOVEA.L    D0,A0
+00002444  2048                    2145      MOVEA.L    A0,A0
+00002446  2050                    2146      MOVEA.L    (A0),A0
+00002448  2058                    2147      MOVEA.L    (A0)+,A0
+0000244A  2060                    2148      MOVEA.L    -(A0),A0  
+0000244C  D401                    2149      ADD.B     D1,D2
+0000244E  D311                    2150      ADD.B     D1,(A1)
+00002450  D319                    2151      ADD.B     D1,(A1)+
+00002452  D321                    2152      ADD.B     D1,-(A1)
+00002454  D211                    2153      ADD.B     (A1),D1
+00002456  D219                    2154      ADD.B     (A1)+,D1
+00002458  D221                    2155      ADD.B     -(A1),D1
+0000245A  D441                    2156      ADD.W     D1,D2
+0000245C  D351                    2157      ADD.W     D1,(A1)
+0000245E  D359                    2158      ADD.W     D1,(A1)+
+00002460  D361                    2159      ADD.W     D1,-(A1)
+00002462  D251                    2160      ADD.W     (A1),D1
+00002464  D259                    2161      ADD.W     (A1)+,D1
+00002466  D261                    2162      ADD.W     -(A1),D1
+00002468  D481                    2163      ADD.L     D1,D2
+0000246A  D391                    2164      ADD.L     D1,(A1)
+0000246C  D399                    2165      ADD.L     D1,(A1)+
+0000246E  D3A1                    2166      ADD.L     D1,-(A1)
+00002470  D291                    2167      ADD.L     (A1),D1
+00002472  D299                    2168      ADD.L     (A1)+,D1
+00002474  D2A1                    2169      ADD.L     -(A1),D1
+00002476  D4C1                    2170      ADDA.W        D1,A2
+00002478  D4D1                    2171      ADDA.W        (A1),A2
+0000247A  D4D9                    2172      ADDA.W        (A1)+,A2
+0000247C  D4E1                    2173      ADDA.W        -(A1),A2
+0000247E  D5C1                    2174      ADDA.L        D1,A2
+00002480  D5D1                    2175      ADDA.L        (A1),A2
+00002482  D5D9                    2176      ADDA.L        (A1)+,A2
+00002484  D5E1                    2177      ADDA.L        -(A1),A2
+00002486  9401                    2178      SUB.B     D1,D2
+00002488  9311                    2179      SUB.B     D1,(A1)
+0000248A  9319                    2180      SUB.B     D1,(A1)+
+0000248C  9321                    2181      SUB.B     D1,-(A1)
+0000248E  9211                    2182      SUB.B     (A1),D1
+00002490  9219                    2183      SUB.B     (A1)+,D1
+00002492  9221                    2184      SUB.B     -(A1),D1
+00002494  9441                    2185      SUB.W     D1,D2
+00002496  92C1                    2186      SUB.W     D1,A1
+00002498  9351                    2187      SUB.W     D1,(A1)
+0000249A  9359                    2188      SUB.W     D1,(A1)+
+0000249C  9361                    2189      SUB.W     D1,-(A1)
+0000249E  9249                    2190      SUB.W     A1,D1
+000024A0  9251                    2191      SUB.W     (A1),D1
+000024A2  9259                    2192      SUB.W     (A1)+,D1
+000024A4  9261                    2193      SUB.W     -(A1),D1
+000024A6  9481                    2194      SUB.L     D1,D2
+000024A8  93C1                    2195      SUB.L     D1,A1
+000024AA  9391                    2196      SUB.L     D1,(A1)
+000024AC  9399                    2197      SUB.L     D1,(A1)+
+000024AE  93A1                    2198      SUB.L     D1,-(A1)
+000024B0  9289                    2199      SUB.L     A1,D1
+000024B2  9291                    2200      SUB.L     (A1),D1
+000024B4  9299                    2201      SUB.L     (A1)+,D1
+000024B6  92A1                    2202      SUB.L     -(A1),D1    
+000024B8  C3C0                    2203      MULS.W    D0,D1
+000024BA  C3D0                    2204      MULS.W    (A0),D1
+000024BC  C3E0                    2205      MULS.W    -(A0),D1
+000024BE  C3D8                    2206      MULS.W    (A0)+,D1
+000024C0  82C0                    2207      DIVU.W    D0,D1
+000024C2  82D0                    2208      DIVU.W    (A0),D1
+000024C4  82E0                    2209      DIVU.W    -(A0),D1
+000024C6  82D8                    2210      DIVU.W    (A0)+,D1
+000024C8  C401                    2211      AND.B     D1,D2
+000024CA  C311                    2212      AND.B     D1,(A1)
+000024CC  C319                    2213      AND.B     D1,(A1)+
+000024CE  C321                    2214      AND.B     D1,-(A1)
+000024D0  C211                    2215      AND.B     (A1),D1
+000024D2  C219                    2216      AND.B     (A1)+,D1
+000024D4  C221                    2217      AND.B     -(A1),D1
+000024D6  C441                    2218      AND.W     D1,D2
+000024D8  C351                    2219      AND.W     D1,(A1)
+000024DA  C359                    2220      AND.W     D1,(A1)+
+000024DC  C361                    2221      AND.W     D1,-(A1)
+000024DE  C251                    2222      AND.W     (A1),D1
+000024E0  C259                    2223      AND.W     (A1)+,D1
+000024E2  C261                    2224      AND.W     -(A1),D1
+000024E4  C481                    2225      AND.L     D1,D2
+000024E6  C391                    2226      AND.L     D1,(A1)
+000024E8  C399                    2227      AND.L     D1,(A1)+
+000024EA  C3A1                    2228      AND.L     D1,-(A1)
+000024EC  C291                    2229      AND.L     (A1),D1
+000024EE  C299                    2230      AND.L     (A1)+,D1
+000024F0  C2A1                    2231      AND.L     -(A1),D1
+000024F2  8401                    2232      OR.B     D1,D2
+000024F4  8311                    2233      OR.B     D1,(A1)
+000024F6  8319                    2234      OR.B     D1,(A1)+
+000024F8  8321                    2235      OR.B     D1,-(A1)
+000024FA  8211                    2236      OR.B     (A1),D1
+000024FC  8219                    2237      OR.B     (A1)+,D1
+000024FE  8221                    2238      OR.B     -(A1),D1
+00002500  8441                    2239      OR.W     D1,D2
+00002502  8351                    2240      OR.W     D1,(A1)
+00002504  8359                    2241      OR.W     D1,(A1)+
+00002506  8361                    2242      OR.W     D1,-(A1)
+00002508  8251                    2243      OR.W     (A1),D1
+0000250A  8259                    2244      OR.W     (A1)+,D1
+0000250C  8261                    2245      OR.W     -(A1),D1
+0000250E  8481                    2246      OR.L     D1,D2
+00002510  8391                    2247      OR.L     D1,(A1)
+00002512  8399                    2248      OR.L     D1,(A1)+
+00002514  83A1                    2249      OR.L     D1,-(A1)
+00002516  8291                    2250      OR.L     (A1),D1
+00002518  8299                    2251      OR.L     (A1)+,D1
+0000251A  82A1                    2252      OR.L     -(A1),D1
+0000251C  E32A                    2253      LSL.B     D1,D2
+0000251E  E36A                    2254      LSL.W     D1,D2
+00002520  E3D1                    2255      LSL.W     (A1)
+00002522  E3D9                    2256      LSL.W     (A1)+
+00002524  E3E1                    2257      LSL.W     -(A1)
+00002526  E3AA                    2258      LSL.L     D1,D2
+00002528  E22A                    2259      LSR.B     D1,D2
+0000252A  E26A                    2260      LSR.W     D1,D2
+0000252C  E2D1                    2261      LSR.W     (A1)
+0000252E  E2D9                    2262      LSR.W     (A1)+
+00002530  E2E1                    2263      LSR.W     -(A1)
+00002532  E2AA                    2264      LSR.L     D1,D2    
+00002534  E222                    2265      ASR.B     D1,D2
+00002536  E262                    2266      ASR.W     D1,D2
+00002538  E0D1                    2267      ASR.W     (A1)
+0000253A  E0D9                    2268      ASR.W     (A1)+
+0000253C  E0E1                    2269      ASR.W     -(A1)
+0000253E  E2A2                    2270      ASR.L     D1,D2
+00002540  E322                    2271      ASL.B     D1,D2
+00002542  E362                    2272      ASL.W     D1,D2
+00002544  E1D1                    2273      ASL.W     (A1)
+00002546  E1D9                    2274      ASL.W     (A1)+
+00002548  E1E1                    2275      ASL.W     -(A1)
+0000254A  E3A2                    2276      ASL.L     D1,D2
+0000254C  E33A                    2277      ROL.B     D1,D2
+0000254E  E37A                    2278      ROL.W     D1,D2
+00002550  E7D1                    2279      ROL.W     (A1)
+00002552  E7D9                    2280      ROL.W     (A1)+
+00002554  E7E1                    2281      ROL.W     -(A1)
+00002556  E3BA                    2282      ROL.L     D1,D2
+00002558  E23A                    2283      ROR.B     D1,D2
+0000255A  E27A                    2284      ROR.W     D1,D2
+0000255C  E6D1                    2285      ROR.W     (A1)
+0000255E  E6D9                    2286      ROR.W     (A1)+
+00002560  E6E1                    2287      ROR.W     -(A1)
+00002562  E2BA                    2288      ROR.L     D1,D2    
+00002564  B200                    2289      CMP.B    D0,D1
+00002566  B210                    2290      CMP.B    (A0),D1
+00002568  B220                    2291      CMP.B    -(A0),D1
+0000256A  B218                    2292      CMP.B    (A0)+,D1
+0000256C  B240                    2293      CMP.W    D0,D1
+0000256E  B248                    2294      CMP.W    A0,D1
+00002570  B250                    2295      CMP.W    (A0),D1
+00002572  B260                    2296      CMP.W    -(A0),D1
+00002574  B258                    2297      CMP.W    (A0)+,D1
+00002576  B280                    2298      CMP.L    D0,D1
+00002578  B288                    2299      CMP.L    A0,D1
+0000257A  B290                    2300      CMP.L    (A0),D1
+0000257C  B2A0                    2301      CMP.L    -(A0),D1
+0000257E  B298                    2302      CMP.L    (A0)+,D1
+00002580  6450                    2303      BCC.B     label1
+00002582  646E                    2304      BCC.B     label2
+00002584  6E4C                    2305      BGT.B     label1
+00002586  6E6A                    2306      BGT.B     label2
+00002588  6F48                    2307      BLE.B     label1
+0000258A  6F66                    2308      BLE.B     label2
+0000258C  6400 0044               2309      BCC.W     label1
+00002590  6400 0060               2310      BCC.W     label2
+00002594  6400 0094               2311      BCC.W     label3
+00002598  6E00 0038               2312      BGT.W     label1
+0000259C  6E00 0054               2313      BGT.W     label2
+000025A0  6E00 0088               2314      BGT.W     label3
+000025A4  6F00 002C               2315      BLE.W     label1
+000025A8  6F00 0048               2316      BLE.W     label2
+000025AC  6F00 007C               2317      BLE.W     label3
+000025B0  4E90                    2318      JSR       (A0)
+000025B2  4EB8 1234               2319      JSR       $1234
+000025B6  4EB9 12345678           2320      JSR       $12345678
+000025BC  4EB9 000025D2           2321      JSR       label1
+000025C2  4EB9 000025F2           2322      JSR       label2
+000025C8  4EB9 0000262A           2323      JSR       label3
+000025CE  4E71                    2324      NOP
+000025D0  4E75                    2325      RTS
+000025D2                          2326  label1
+000025D2  4E71                    2327      NOP
+000025D4  4E75                    2328      RTS
+000025D6  41F8 0012               2329      LEA       $12,A0
+000025DA  41F8 1234               2330      LEA       $1234,A0
+000025DE  41F9 12345678           2331      LEA       $12345678,A0
+000025E4  4238 0012               2332      CLR.B     $12
+000025E8  4238 1234               2333      CLR.B     $1234
+000025EC  4239 12345678           2334      CLR.B     $12345678
+000025F2                          2335  label2
+000025F2  4278 0012               2336      CLR.W     $12
+000025F6  4278 1234               2337      CLR.W     $1234
+000025FA  4279 12345678           2338      CLR.W     $12345678
+00002600  42B8 0012               2339      CLR.L     $12
+00002604  42B8 1234               2340      CLR.L     $1234
+00002608  42B9 12345678           2341      CLR.L     $12345678
+0000260E  7000                    2342      MOVEQ     #$0,D0
+00002610  7012                    2343      MOVEQ     #$12,D0
+00002612  70FF                    2344      MOVEQ     #$FF,D0
+00002614  0601 0012               2345      ADDI.B    #$12,D1
+00002618  0610 0012               2346      ADDI.B    #$12,(A0)
+0000261C  0618 0012               2347      ADDI.B    #$12,(A0)+
+00002620  0620 0012               2348      ADDI.B    #$12,-(A0)
+00002624  0638 0012 1234          2349      ADDI.B    #$12,$1234
+0000262A                          2350  label3
+0000262A  0639 0012 12345678      2351      ADDI.B    #$12,$12345678
+00002632  0641 1234               2352      ADDI.W    #$1234,D1
+00002636  0650 1234               2353      ADDI.W    #$1234,(A0)
+0000263A  0658 1234               2354      ADDI.W    #$1234,(A0)+
+0000263E  0660 1234               2355      ADDI.W    #$1234,-(A0)
+00002642  0678 1234 1234          2356      ADDI.W    #$1234,$1234
+00002648  0679 1234 12345678      2357      ADDI.W    #$1234,$12345678
+00002650  0681 12345678           2358      ADDI.L    #$12345678,D1
+00002656  0690 12345678           2359      ADDI.L    #$12345678,(A0)
+0000265C  0698 12345678           2360      ADDI.L    #$12345678,(A0)+
+00002662  06A0 12345678           2361      ADDI.L    #$12345678,-(A0)
+00002668  06B8 12345678 1234      2362      ADDI.L    #$12345678,$1234
+00002670  06B9 12345678 12345678  2363      ADDI.L    #$12345678,$12345678
+0000267A  5240                    2364      ADDQ      #$1,D0
+0000267C  5640                    2365      ADDQ      #$3,D0
+0000267E  5040                    2366      ADDQ      #$8,D0
+00002680  1238 0012               2367      MOVE.B    $12,D1
+00002684  10B8 0012               2368      MOVE.B    $12,(A0)
+00002688  10F8 0012               2369      MOVE.B    $12,(A0)+
+0000268C  1138 0012               2370      MOVE.B    $12,-(A0)
+00002690  1038 1234               2371      MOVE.B    $1234,D0
+00002694  12B8 1234               2372      MOVE.B    $1234,(A1)
+00002698  12F8 1234               2373      MOVE.B    $1234,(A1)+
+0000269C  1338 1234               2374      MOVE.B    $1234,-(A1)
+000026A0  1039 12345678           2375      MOVE.B    $12345678,D0
+000026A6  12B9 12345678           2376      MOVE.B    $12345678,(A1)
+000026AC  12F9 12345678           2377      MOVE.B    $12345678,(A1)+
+000026B2  1339 12345678           2378      MOVE.B    $12345678,-(A1)
+000026B8  103C 0012               2379      MOVE.B    #$12,D0
+000026BC  12BC 0012               2380      MOVE.B    #$12,(A1)
+000026C0  12FC 0012               2381      MOVE.B    #$12,(A1)+
+000026C4  133C 0012               2382      MOVE.B    #$12,-(A1)
+000026C8  3238 0012               2383      MOVE.W    $12,D1
+000026CC  30B8 0012               2384      MOVE.W    $12,(A0)
+000026D0  30F8 0012               2385      MOVE.W    $12,(A0)+
+000026D4  3138 0012               2386      MOVE.W    $12,-(A0)
+000026D8  3038 1234               2387      MOVE.W    $1234,D0
+000026DC  32B8 1234               2388      MOVE.W    $1234,(A1)
+000026E0  32F8 1234               2389      MOVE.W    $1234,(A1)+
+000026E4  3338 1234               2390      MOVE.W    $1234,-(A1)
+000026E8  3039 12345678           2391      MOVE.W    $12345678,D0
+000026EE  32B9 12345678           2392      MOVE.W    $12345678,(A1)
+000026F4  32F9 12345678           2393      MOVE.W    $12345678,(A1)+
+000026FA  3339 12345678           2394      MOVE.W    $12345678,-(A1)
+00002700  303C 1234               2395      MOVE.W    #$1234,D0
+00002704  32BC 1234               2396      MOVE.W    #$1234,(A1)
+00002708  32FC 1234               2397      MOVE.W    #$1234,(A1)+
+0000270C  333C 1234               2398      MOVE.W    #$1234,-(A1)
+00002710  2238 0012               2399      MOVE.L    $12,D1
+00002714  20B8 0012               2400      MOVE.L    $12,(A0)
+00002718  20F8 0012               2401      MOVE.L    $12,(A0)+
+0000271C  2138 0012               2402      MOVE.L    $12,-(A0)
+00002720  2038 1234               2403      MOVE.L    $1234,D0
+00002724  22B8 1234               2404      MOVE.L    $1234,(A1)
+00002728  22F8 1234               2405      MOVE.L    $1234,(A1)+
+0000272C  2338 1234               2406      MOVE.L    $1234,-(A1)
+00002730  2039 12345678           2407      MOVE.L    $12345678,D0
+00002736  22B9 12345678           2408      MOVE.L    $12345678,(A1)
+0000273C  22F9 12345678           2409      MOVE.L    $12345678,(A1)+
+00002742  2339 12345678           2410      MOVE.L    $12345678,-(A1)
+00002748  203C 12345678           2411      MOVE.L    #$12345678,D0
+0000274E  22BC 12345678           2412      MOVE.L    #$12345678,(A1)
+00002754  22FC 12345678           2413      MOVE.L    #$12345678,(A1)+
+0000275A  233C 12345678           2414      MOVE.L    #$12345678,-(A1)
+00002760  48B8 FE00 0012          2415      MOVEM.W   A1-A7,$12
+00002766                          2416  *>>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
+00002766  48F8 00FE 0012          2417      MOVEM.L   D1-D7,$12
+0000276C  48B8 0280 0012          2418      MOVEM.W   A1/D7,$12
+00002772  48F8 0280 0012          2419      MOVEM.L   A1/D7,$12
+00002778  48B8 FE00 1234          2420      MOVEM.W   A1-A7,$1234
+0000277E  48F8 00FE 1234          2421      MOVEM.L   D1-D7,$1234
+00002784  48B8 0280 1234          2422      MOVEM.W   A1/D7,$1234
+0000278A  48F8 0280 1234          2423      MOVEM.L   A1/D7,$1234
+00002790  48B9 FE00 12345678      2424      MOVEM.W   A1-A7,$12345678
+00002798  48F9 00FE 12345678      2425      MOVEM.L   D1-D7,$12345678
+000027A0  48B9 0280 12345678      2426      MOVEM.W   A1/D7,$12345678
+000027A8  48F9 0280 12345678      2427      MOVEM.L   A1/D7,$12345678
+000027B0  4CB8 FE00 0012          2428      MOVEM.W   $12,A1-A7
+000027B6  4CF8 00FE 0012          2429      MOVEM.L   $12,D1-D7
+000027BC  4CB8 0280 0012          2430      MOVEM.W   $12,A1/D7
+000027C2  4CF8 0280 0012          2431      MOVEM.L   $12,A1/D7
+000027C8  4CB8 FE00 1234          2432      MOVEM.W   $1234,A1-A7
+000027CE  4CF8 00FE 1234          2433      MOVEM.L   $1234,D1-D7
+000027D4  4CB8 0280 1234          2434      MOVEM.W   $1234,A1/D7
+000027DA  4CF8 0280 1234          2435      MOVEM.L   $1234,A1/D7
+000027E0  4CB9 FE00 12345678      2436      MOVEM.W   $12345678,A1-A7
+000027E8  4CF9 00FE 12345678      2437      MOVEM.L   $12345678,D1-D7
+000027F0  4CB9 0280 12345678      2438      MOVEM.W   $12345678,A1/D7
+000027F8  4CF9 0280 12345678      2439      MOVEM.L   $12345678,A1/D7
+00002800                          2440  *<<<<<<< HEAD
+00002800                          2441  
+00002800                          2442  
+00002800                          2443  
+00002800                          2444      
+00002800                          2445      
+00002800                          2446  
+00002800                          2447  *=======
+00002800  D338 0012               2448      ADD.B     D1,$12
+00002804  D338 1234               2449      ADD.B     D1,$1234
+00002808  D339 12345678           2450      ADD.B     D1,$12345678
+0000280E  D238 0012               2451      ADD.B     $12,D1
+00002812  D238 1234               2452      ADD.B     $1234,D1
+00002816  D239 12345678           2453      ADD.B     $12345678,D1
+0000281C  0601 0012               2454      ADD.B     #$12,D1
+00002820  D378 0012               2455      ADD.W     D1,$12
+00002824  D378 1234               2456      ADD.W     D1,$1234
+00002828  D379 12345678           2457      ADD.W     D1,$12345678
+0000282E  D278 0012               2458      ADD.W     $12,D1
+00002832  D278 1234               2459      ADD.W     $1234,D1
+00002836  D279 12345678           2460      ADD.W     $12345678,D1
+0000283C  0641 1234               2461      ADD.W     #$1234,D1
+00002840  D3B8 0012               2462      ADD.L     D1,$12
+00002844  D3B8 1234               2463      ADD.L     D1,$1234
+00002848  D3B9 12345678           2464      ADD.L     D1,$12345678
+0000284E  D2B8 0012               2465      ADD.L     $12,D1
+00002852  D2B8 1234               2466      ADD.L     $1234,D1
+00002856  D2B9 12345678           2467      ADD.L     $12345678,D1
+0000285C  0681 12345678           2468      ADD.L     #$12345678,D1
+00002862  D4F8 0012               2469      ADDA.W    $12,A2
+00002866  D4F8 1234               2470      ADDA.W    $1234,A2
+0000286A  D4F9 12345678           2471      ADDA.W    $12345678,A2
+00002870  D4FC 1234               2472      ADDA.W    #$1234,A2
+00002874  D5F8 0012               2473      ADDA.L    $12,A2
+00002878  D5F8 1234               2474      ADDA.L    $1234,A2
+0000287C  D5F9 12345678           2475      ADDA.L    $12345678,A2
+00002882  D5FC 12345678           2476      ADDA.L    #$12345678,A2
+00002888  9338 0012               2477      SUB.B     D1,$12
+0000288C  9338 1234               2478      SUB.B     D1,$1234
+00002890  9339 12345678           2479      SUB.B     D1,$12345678
+00002896  9238 0012               2480      SUB.B     $12,D1
+0000289A  9238 1234               2481      SUB.B     $1234,D1
+0000289E  9239 12345678           2482      SUB.B     $12345678,D1
+000028A4  0401 0012               2483      SUB.B     #$12,D1
+000028A8  9378 0012               2484      SUB.W     D1,$12
+000028AC  9378 1234               2485      SUB.W     D1,$1234
+000028B0  9379 12345678           2486      SUB.W     D1,$12345678
+000028B6  9278 0012               2487      SUB.W     $12,D1
+000028BA  9278 1234               2488      SUB.W     $1234,D1
+000028BE  9279 12345678           2489      SUB.W     $12345678,D1
+000028C4  0441 1234               2490      SUB.W     #$1234,D1
+000028C8  93B8 0012               2491      SUB.L     D1,$12
+000028CC  93B8 1234               2492      SUB.L     D1,$1234
+000028D0  93B9 12345678           2493      SUB.L     D1,$12345678
+000028D6  92B8 0012               2494      SUB.L     $12,D1
+000028DA  92B8 1234               2495      SUB.L     $1234,D1
+000028DE  92B9 12345678           2496      SUB.L     $12345678,D1
+000028E4  0481 12345678           2497      SUB.L     #$12345678,D1
+000028EA  C3F8 0012               2498      MULS.W    $12,D1
+000028EE  C3F8 1234               2499      MULS.W    $1234,D1
+000028F2  C3F9 12345678           2500      MULS.W    $12345678,D1
+000028F8  C3FC 1234               2501      MULS.W    #$1234,D1
+000028FC  82F8 0012               2502      DIVU.W    $12,D1
+00002900  82F8 1234               2503      DIVU.W    $1234,D1
+00002904  82F9 12345678           2504      DIVU.W    $12345678,D1
+0000290A  82FC 1234               2505      DIVU.W    #$1234,D1
+0000290E  C338 0012               2506      AND.B     D1,$12
+00002912  C338 1234               2507      AND.B     D1,$1234
+00002916  C339 12345678           2508      AND.B     D1,$12345678
+0000291C  C238 0012               2509      AND.B     $12,D1
+00002920  C238 1234               2510      AND.B     $1234,D1
+00002924  C239 12345678           2511      AND.B     $12345678,D1
+0000292A  C23C 0012               2512      AND.B     #$12,D1
+0000292E  C378 0012               2513      AND.W     D1,$12
+00002932  C378 1234               2514      AND.W     D1,$1234
+00002936  C379 12345678           2515      AND.W     D1,$12345678
+0000293C  C278 0012               2516      AND.W     $12,D1
+00002940  C278 1234               2517      AND.W     $1234,D1
+00002944  C279 12345678           2518      AND.W     $12345678,D1
+0000294A  C27C 1234               2519      AND.W     #$1234,D1
+0000294E  C3B8 0012               2520      AND.L     D1,$12
+00002952  C3B8 1234               2521      AND.L     D1,$1234
+00002956  C3B9 12345678           2522      AND.L     D1,$12345678
+0000295C  C2B8 0012               2523      AND.L     $12,D1
+00002960  C2B8 1234               2524      AND.L     $1234,D1
+00002964  C2B9 12345678           2525      AND.L     $12345678,D1
+0000296A  C2BC 12345678           2526      AND.L     #$12345678,D1
+00002970  E30A                    2527      LSL.B     #$1,D2
+00002972  E54A                    2528      LSL.W     #$2,D2
+00002974  E78A                    2529      LSL.L     #$3,D2
+00002976  E3F8 0012               2530      LSL.W     $12
+0000297A  E3F8 1234               2531      LSL.W     $1234
+0000297E  E3F9 12345678           2532      LSL.W     $12345678
+00002984  E202                    2533      ASR.B     #$1,D2
+00002986  E442                    2534      ASR.W     #$2,D2
+00002988  E682                    2535      ASR.L     #$3,D2
+0000298A  E0F8 0012               2536      ASR.W     $12
+0000298E  E0F8 1234               2537      ASR.W     $1234
+00002992  E0F9 12345678           2538      ASR.W     $12345678
+00002998  E31A                    2539      ROL.B     #$1,D2
+0000299A  E55A                    2540      ROL.W     #$2,D2
+0000299C  E79A                    2541      ROL.L     #$3,D2
+0000299E  E7F8 0012               2542      ROL.W     $12
+000029A2  E7F8 1234               2543      ROL.W     $1234
+000029A6  E7F9 12345678           2544      ROL.W     $12345678
+000029AC  B238 0012               2545  label4    CMP.B     $12,D1
+000029B0  B238 1234               2546      CMP.B     $1234,D1
+000029B4  B239 12345678           2547      CMP.B     $12345678,D1
+000029BA  B23C 0012               2548      CMP.B     #$12,D1
+000029BE  B278 0012               2549      CMP.W     $12,D1
+000029C2  B278 1234               2550      CMP.W     $1234,D1
+000029C6  B279 12345678           2551      CMP.W     $12345678,D1
+000029CC  B27C 1234               2552      CMP.W     #$1234,D1
+000029D0  B2B8 0012               2553      CMP.L     $12,D1
+000029D4  B2B8 1234               2554      CMP.L     $1234,D1
+000029D8  B2B9 12345678           2555      CMP.L     $12345678,D1
+000029DE  B2BC 12345678           2556      CMP.L     #$12345678,D1
+000029E4  64C6                    2557      BCC.B     label4
+000029E6  6EC4                    2558      BGT.B     label4
+000029E8  6FC2                    2559      BLE.B     label4
+000029EA  6400 FBE6               2560      BCC.W     label1
+000029EE  6400 FC02               2561      BCC.W     label2
+000029F2  6400 FC36               2562      BCC.W     label3
+000029F6  6E00 FBDA               2563      BGT.W     label1
+000029FA  6E00 FBF6               2564      BGT.W     label2
+000029FE  6E00 FC2A               2565      BGT.W     label3
+00002A02  6F00 FBCE               2566      BLE.W     label1
+00002A06  6F00 FBEA               2567      BLE.W     label2
+00002A0A  6F00 FC1E               2568      BLE.W     label3
+00002A0E  4EB8 25D2               2569      JSR       label1
+00002A12  4EB8 25F2               2570      JSR       label2
+00002A16  4EB8 262A               2571      JSR       label3
+00002A1A  3241                    2572      MOVEA     D1,A1
+00002A1C  D2C1                    2573      ADDA      D1,A1
+00002A1E  0801 0001               2574      BTST      #1,D1
+00002A22                          2575  
+00002A22                          2576  
+00002A22                          2577  *>>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
+00002A22                          2578  
+00002A22                          2579  EXIT
+00002A22                          2580      END    START        ; last line of source
+
+No errors detected
+No warnings generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+ADDRESS_CONFIGURE   1E76
+BXX_CONDITION       1D02
+BYTE_DISPLAY        12A8
+CBYTE               1A4E
+CR                  D
+CWORD               1A54
+DADD                231E
+DADDA               22EC
+DADDI               22E2
+DADDQ               22DD
+DADDRESS            22A7
+DAN                 2294
+DAND                2317
+DANPLUS             2296
+DANPLUSN            2299
+DANPLUSP            229B
+DASL                22BB
+DASR                22B7
+DBCC                22FC
+DBGT                2300
+DBLE                2304
+DBXX                2308
+DBYTE               22AE
+DCLR                228E
+DCMP                22D3
+DCOMMA              22AC
+DDIVU               22F7
+DDN                 2292
+DECODE              12D2
+DECODING_FINISHED   206C
+DFFFF               22A2
+DIFFERENCE_CHECK    1DC2
+DIFFERENCE_ERROR    1DCE
+DIFFERENTERROR      21BE
+DIM                 22A9
+DISPLACEMENT_HANDLE  1D52
+DISPLAYCHAR         1FE4
+DISPLAYNUM          1FF2
+DISPLAY_ADD         1C1A
+DISPLAY_ADDA        184A
+DISPLAY_ADDI        16EA
+DISPLAY_ADDQ        1684
+DISPLAY_ADDRESS     1E90
+DISPLAY_ADDRESS_L   1EBE
+DISPLAY_AND         1BAA
+DISPLAY_ANDI        1742
+DISPLAY_ASL         1F9E
+DISPLAY_ASR         1F90
+DISPLAY_BCC         1D28
+DISPLAY_BGT         1D36
+DISPLAY_BLE         1D44
+DISPLAY_BXX         19B6
+DISPLAY_CLR         1556
+DISPLAY_CMP         15DC
+DISPLAY_DIVU        196A
+DISPLAY_FFFF        1FF8
+DISPLAY_JSR         1472
+DISPLAY_LEA         1590
+DISPLAY_LSL         1FBA
+DISPLAY_LSR         1FAC
+DISPLAY_MOVE        19D6
+DISPLAY_MOVEA       18AA
+DISPLAY_MOVEM       1A5A
+DISPLAY_MOVEQ       1632
+DISPLAY_MUL         190E
+DISPLAY_NEG         14A2
+DISPLAY_NOP         1464
+DISPLAY_OR          1BE2
+DISPLAY_ORI         179A
+DISPLAY_REGISTER_BCS  1B00
+DISPLAY_REGISTER_D  1B1E
+DISPLAY_ROL         1FD6
+DISPLAY_ROR         1FC8
+DISPLAY_ROTATION_M  14DC
+DISPLAY_ROTATION_R  1510
+DISPLAY_RTS         1456
+DISPLAY_SUB         1C52
+DISPLAY_SUBI        17F2
+DJSR                2286
+DLEA                22CF
+DLONG               22B4
+DLSL                22C3
+DLSR                22BF
+DMINUSAN            229E
+DMOVE               230C
+DMOVEA              22F1
+DMOVEM              2311
+DMOVEQ              22D7
+DMUL                2328
+DNEG                228A
+DNOP                2282
+DN_EA               1CCA
+DOR                 231B
+DROL                22CB
+DROR                22C7
+DRTS                227E
+DSIGNED             232E
+DSLASH              2326
+DSUB                2322
+DSUBI               22E7
+DUNSIGNED           232C
+DWORD               22B1
+D_LONG              2038
+D_S_HANDLE          205E
+EA_AB_IM            11F2
+EA_AB_LONG          1230
+EA_AB_WORD          120C
+EA_AN               1156
+EA_ANINDIRECT       1174
+EA_ANPLUS           119E
+EA_DN               1138
+EA_HANDLE           1106
+EA_IM               124E
+EA_MINUSAN          11C8
+ENDDISPLAY          221B
+ENDINPUT            212B
+END_D               1B34
+ENTERMESSAGE        2238
+EXIT                2A22
+FFFF                2004
+GOAGAINPROMPT       2257
+GO_AGAIN_PREP       209A
+IM_LONG             127C
+IM_SIZE             1262
+INPUT_ERROR         1E7E
+IORR                1F16
+LABEL1              25D2
+LABEL2              25F2
+LABEL3              262A
+LABEL4              29AC
+LF                  A
+LONG_CHECK          2020
+LONG_D              1D80
+LONG_DISPLAY        12C4
+LOWER_CASE_CHECK    1E04
+MEM2REG             1AD4
+MODE_CHECK          1C8A
+MOVEM_DIR           1A88
+MOVE_SIZE           2012
+MOVE_SIZEE          1A3C
+MOVE_WORD           201C
+NL                  20AE
+NOP                 2346
+NULLSTRING          227B
+NUMBER_CHECK        1E50
+ODDERROR            21FC
+ODD_ERROR           1DF2
+PRINT_A             1B70
+PRINT_REGISTER      1B36
+RANGEERROR          219D
+RANGE_CHECK         1D9C
+RANGE_ERROR         1DE0
+READMEMORY          1098
+REGISTER_SHIFT      1F5E
+RETURN_FROM_PROMPT  10A6
+ROL_W               1BA6
+ROTATION_CHECK      1EE4
+SIZE_HANDLE         128E
+SPACE               20B1
+START               1000
+STARTINPUT          20B8
+S_U_HANDLE          2048
+TYPEINPUTERROR      2171
+UPPER_CASE_CHECK    1E2A
+USERENDADDRESS      1048
+USERSTARTADDRESS    1012
+WAIT_FOR_PROMPT     10E8
+WORD_D              1D72
+WORD_DISPLAY        12B6
+Z2E                 1D98
+ZERO                20B3
+ZERO2EIGHT          1D8E
