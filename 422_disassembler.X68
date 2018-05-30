@@ -44,13 +44,10 @@
 *        Update:  - 05/24/2018 Martin
 *                   + Debug:  MOVEM
 *                   +         It works under every condition 
-<<<<<<< HEAD
 *                   + Debug:  MOVE, Now it can identify MOVEA and MOVE
-=======
 *       Update:   - 5/26/2018 Chris
 *                   +Modified so data outputs one page at a time
 *                   +Modified so after decoding program prompts user to go again
->>>>>>> 21d8566de4a0f28e425408420bb98896636302ac
 *-----------------------------------------------------------
 START      ORG    $1000     *First instruction of program
                     
@@ -1946,7 +1943,10 @@ GO_AGAIN_PREP
     CLR.L   D6
     CLR.L   D7
     BRA     userStartAddress 
-    
+        
+
+EXIT
+     
 * -----------------------------------------------------------------------------------------------------------
 * Variables and constants 
 * -----------------------------------------------------------------------------------------------------------
@@ -2025,21 +2025,15 @@ DSLASH          DC.B    '/',0
 DMUL            DC.B    'MUL',0
 Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
-
-<<<<<<< HEAD
-=======
+    
 *<<<<<<< HEAD
->>>>>>> 21d8566de4a0f28e425408420bb98896636302ac
             MOVEM.L   (A1)+,D1-D7
             MOVEM.W   (A1)+,A1/D7
             MOVEM.L   (A1)+,A1/D7
             MOVEM.W   (A1),A1-A7
             
             MOVEM.W   A1-A7,$12
-<<<<<<< HEAD
-=======
 *=======
->>>>>>> 21d8566de4a0f28e425408420bb98896636302ac
 NOP
     RTS
     NOP
@@ -2423,10 +2417,8 @@ label3
     MOVE.L    #$12345678,(A1)+
     MOVE.L    #$12345678,-(A1)
     MOVEM.W   A1-A7,$12
-<<<<<<< HEAD
-=======
+
 *>>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
->>>>>>> 21d8566de4a0f28e425408420bb98896636302ac
     MOVEM.L   D1-D7,$12
     MOVEM.W   A1/D7,$12
     MOVEM.L   A1/D7,$12
@@ -2450,11 +2442,6 @@ label3
     MOVEM.L   $12345678,D1-D7
     MOVEM.W   $12345678,A1/D7
     MOVEM.L   $12345678,A1/D7
-<<<<<<< HEAD
-
-
-
-=======
 *<<<<<<< HEAD
 
 
@@ -2463,7 +2450,6 @@ label3
 	
 
 *=======
->>>>>>> 21d8566de4a0f28e425408420bb98896636302ac
     ADD.B     D1,$12
     ADD.B     D1,$1234
     ADD.B     D1,$12345678
@@ -2593,13 +2579,9 @@ label4    CMP.B     $12,D1
     BTST      #1,D1
 
 
-<<<<<<< HEAD
-    END    START        ; last line of source
-=======
-*>>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
 
-EXIT
-    END    START        ; last line of source
+    
+    END    START 
 
 
 
@@ -2614,25 +2596,6 @@ EXIT
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 02e884c1dda6a6ded823204406dbd05093c25bc7
-
->>>>>>> 21d8566de4a0f28e425408420bb98896636302ac
 *~Font name~Courier New~
 *~Font size~10~
 *~Tab type~1~
