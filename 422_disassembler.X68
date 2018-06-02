@@ -1631,14 +1631,33 @@ DISPLACEMENT_HANDLE
     BEQ     LONG_D
     
     MOVE.B  D3, D2
-    MOVE.B  #$4, $400
-    JSR Display_Address
+    ANDI.W  #$FF, D2
+    
+    LEA     DADDRESS, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    MOVE.B  #$2, $400
+    JSR Display_Address_B
+    
+    
     RTS   
     
 WORD_D
-    MOVE.W  #7, D4
-    MOVE.W  #0, D5              * D5 to store EA register
-    JSR     EA_HANDLE  
+*    MOVE.W  #7, D4
+*    MOVE.W  #0, D5              * D5 to store EA register
+*    JSR     EA_HANDLE  
+    
+    LEA     DAddress, A1     
+    MOVE.B  #14, D0
+    TRAP    #15
+    
+    CLR.L   D2
+    MOVE.W  (A5)+,D2
+    
+    MOVE.B  #4, $400
+    JSR Display_Address
+    
     RTS   
     
 LONG_D
@@ -1767,7 +1786,24 @@ INPUT_ERROR
     TRAP    #15
     MOVE.B  #1, D6      * use D2 as a flag to check input
     RTS
-    
+
+* --------------------------------------------------
+* Display hex. hex must be stored in D2 and number of rotation in memory $400
+Display_Address_B
+    ROL.B   #4,D2       * Rotate the first hex number to the back so we can read    
+    MOVE.B  D2, D1      * D1 to store the byte data
+    ANDI.B  #$0F,D1     * AND the byte data so we can only see the first one    
+    CMPI.B  #$A,D1      * check if it is greater than A
+    JSR     DisplayChar * If yes jmp to display (A - F)
+    CMPI.B  #$A,D1      * check if it is less than A
+    BLT     DisplayNum  * If yes jmp to display (0 - 9)
+    MOVE.B  #6,D0       * TRAP 6 display character
+    TRAP    #15         
+    SUB.B   #1, $400
+    CMPI.B  #0, $400   *check if roatation done
+    BNE Display_Address_B
+    RTS
+        
 * --------------------------------------------------
 * Display hex. hex must be stored in D2 and number of rotation in memory $400
 Display_Address
@@ -2019,6 +2055,7 @@ endDisplay      DC.B     'You have finihsed decoding', CR, LF, 0
 enterMessage    DC.B     'Please hit enter to continue', CR, LF, 0
 goAgainPrompt   DC.B    'Would you like to go again? (y/n)',CR,LF,0
 nullString      DC.B        '', CR, LF, 0
+DBDISPLACEMENT    DC.B     '(BYTE SIZE DISPLACEMENT) ', 0
 
 DINVALID        DC.B    'INVALID',0
 * INSTRUCTION SET
@@ -2081,6 +2118,7 @@ Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
     
     END    START 
+
 
 
 
