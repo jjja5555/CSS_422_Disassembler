@@ -67,7 +67,6 @@ UserStartAddress
     LEA     startInput, A1      * Prompt input for start address
     MOVE.B  #14, D0
     TRAP    #15
-    MOVEA.L #$0, A1      * Clear A1 so data at address doesn't get modified
     
     MOVE.B  #2, D0
     TRAP    #15
@@ -93,7 +92,6 @@ UserEndAddress
     MOVE.B  #14, D0
     TRAP    #15
 
-    MOVEA.L #$0, A1      * Clear A1 so data at address doesn't get modified
     MOVE.B  #2, D0
     TRAP    #15
     
@@ -123,7 +121,6 @@ UserEndAddress
 
     MOVE.L  D2, A6              * Load accepted Ending address into A6
 
-    MOVE.B  #0, $410             * Use $00000412 to store line count
     
     MOVEA.W #$600,A2             *Address to hold counter for lines printed per page
     MOVE.B  #$1D,(A2)           *0x20 lines per page 
@@ -2011,8 +2008,8 @@ LF              EQU     $0A     * LF
 NL              DC.B    CR,LF,0
 space           DC.B    ' ',0
 zero            DC.B    '0000', 0
-startInput      DC.B    'Welcome to 68k disassembler! Christopher, Martin, Patric', CR, LF 
-                DC.B    'Please enter starting address in Hex($1000 to $FFFFFF): ', 0
+startInput      DC.B    'Welcome to 68k disassembler! Christopher, Martin, Patrik', CR, LF 
+                DC.B    'Please enter starting address in Hex($3000 to $FFFFFF): ', 0
 endInput        DC.B    'Please enter ending address in Hex(must greater than start address): ', 0
 typeInputError  DC.B    'ERROR: Your entered address is not a hex!', CR, LF, 0
 RangeError       DC.B    'ERROR: Address is out of range', CR, LF, 0
@@ -2084,6 +2081,7 @@ Dunsigned       DC.B    'U',0
 Dsigned         DC.B    'S',0
     
     END    START 
+
 
 
 
